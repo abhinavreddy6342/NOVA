@@ -5481,6 +5481,303 @@ h3,
   }
 }
 /* =========================================================
+   NOVA AGENT WORKFLOW PANEL
+   Enterprise AI Copilot & Mission Control Timeline
+   ========================================================= */
+
+.nova-workflow-panel {
+  position: relative;
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(109, 220, 255, 0.14);
+  background: linear-gradient(
+    145deg,
+    rgba(15, 23, 36, 0.85),
+    rgba(9, 13, 20, 0.95)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 32px rgba(0, 0, 0, 0.28),
+    0 0 20px rgba(109, 220, 255, 0.02);
+  overflow: hidden;
+}
+
+.nova-workflow-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(109, 220, 255, 0.35),
+    transparent
+  );
+  opacity: 0.8;
+}
+
+/* Header */
+.nova-workflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.nova-workflow-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7dd3fc;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.nova-workflow-icon {
+  color: var(--nova-accent, #6ddcff);
+}
+
+.nova-workflow-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+}
+
+.nova-workflow-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.nova-workflow-status-badge.status-completed,
+.nova-workflow-status-badge.status-success {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.08);
+  color: #4ade80;
+}
+
+.nova-workflow-status-badge.status-failed,
+.nova-workflow-status-badge.status-error {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+}
+
+.nova-workflow-status-badge.status-blocked {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+}
+
+.nova-workflow-status-badge.status-pending,
+.nova-workflow-status-badge.status-in_progress {
+  border-color: rgba(109, 220, 255, 0.28);
+  background: rgba(109, 220, 255, 0.08);
+  color: #6ddcff;
+}
+
+/* Meta Section */
+.nova-workflow-meta {
+  margin-top: 12px;
+  margin-bottom: 14px;
+}
+
+.nova-workflow-name {
+  margin: 0;
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.nova-workflow-subtitle {
+  margin: 3px 0 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Steps Section */
+.nova-workflow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.nova-workflow-step {
+  display: grid;
+  grid-template-columns: 24px 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.018);
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.nova-workflow-step:hover {
+  border-color: rgba(109, 220, 255, 0.18);
+  background: rgba(109, 220, 255, 0.03);
+}
+
+.nova-workflow-step-num {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.nova-workflow-step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6ddcff;
+}
+
+.nova-workflow-step-icon.status-completed,
+.nova-workflow-step-icon.status-success {
+  color: #4ade80;
+}
+
+.nova-workflow-step-icon.status-failed,
+.nova-workflow-step-icon.status-error {
+  color: #f87171;
+}
+
+.nova-workflow-step-icon.status-blocked {
+  color: #fbbf24;
+}
+
+.nova-workflow-step-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nova-workflow-step-title {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nova-workflow-step-tool {
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nova-workflow-step-status {
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.04);
+  color: #64748b;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nova-workflow-step-status.status-completed,
+.nova-workflow-step-status.status-success {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.nova-workflow-step-status.status-failed,
+.nova-workflow-step-status.status-error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.nova-workflow-step-status.status-blocked {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+/* Metrics Cards */
+.nova-workflow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.nova-workflow-metric-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: center;
+  transition: border-color 150ms ease;
+}
+
+.nova-workflow-metric-card.metric-completed {
+  border-left: 2px solid rgba(34, 197, 94, 0.5);
+}
+
+.nova-workflow-metric-card.metric-failed {
+  border-left: 2px solid rgba(239, 68, 68, 0.5);
+}
+
+.nova-workflow-metric-card.metric-blocked {
+  border-left: 2px solid rgba(245, 158, 11, 0.5);
+}
+
+.nova-workflow-metric-val {
+  font-family: var(--font-mono, monospace);
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.nova-workflow-metric-lbl {
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+/* =========================================================
    NOVA GENERATED ARTIFACTS
    Premium downloadable deliverable system
    ========================================================= */

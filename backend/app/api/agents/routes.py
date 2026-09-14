@@ -1,4 +1,6 @@
-from typing import Any, Dict, Optional
+from pathlib import Path
+import shutil
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -10,7 +12,11 @@ from app.agents.response.synthesizer import (
     agent_response_synthesizer,
 )
 from app.core.database import get_db
+from app.services.chat_files import (
+    load_chat_file,
+)
 from app.services.chat_history import (
+    add_attachment,
     add_message,
     create_conversation,
     get_conversation,
@@ -23,18 +29,398 @@ router = APIRouter(
 )
 
 
+# ---------------------------------------------------------------------------
+# NOVA WORKSPACE
+# ---------------------------------------------------------------------------
+
+# routes.py is located at:
+# backend/app/api/agents/routes.py
+#
+# parents[0] -> agents
+# parents[1] -> api
+# parents[2] -> app
+# parents[3] -> backend
+
+APP_ROOT = Path(__file__).resolve().parents[2]
+
+BACKEND_ROOT = (
+    APP_ROOT.parent
+).resolve()
+
+WORKSPACE_ROOT = (
+    APP_ROOT
+    / "workspace"
+).resolve()
+
+WORKSPACE_INPUT_DIR = (
+    WORKSPACE_ROOT
+    / "input"
+).resolve()
+
+CHAT_UPLOADS_DIR = (
+    APP_ROOT
+    / "knowledge"
+    / "chat_uploads"
+).resolve()
+
+ALLOWED_SPREADSHEET_EXTENSIONS = {
+    ".csv",
+    ".xlsx",
+}
+
+
+# ---------------------------------------------------------------------------
+# REQUEST / RESPONSE MODELS
+# ---------------------------------------------------------------------------
+
 class AgentRunRequest(BaseModel):
     objective: str = Field(..., min_length=1)
+
     context: Optional[Dict[str, Any]] = None
+
     auto_confirm: bool = False
 
 
 class AgentRunResponse(BaseModel):
     conversation_id: Optional[str] = None
+
     plan: Dict[str, Any]
+
     execution: Dict[str, Any]
+
     response: str
 
+
+# ---------------------------------------------------------------------------
+# ATTACHMENT HELPERS
+# ---------------------------------------------------------------------------
+
+def _get_context_attachments(
+    context: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Extract attachment references from the agent context.
+    """
+
+    if not context:
+        return []
+
+    attachments = context.get(
+        "attachments",
+        [],
+    )
+
+    if not isinstance(
+        attachments,
+        list,
+    ):
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+
+    for attachment in attachments:
+        if not isinstance(
+            attachment,
+            dict,
+        ):
+            continue
+
+        file_id = str(
+            attachment.get(
+                "file_id",
+                "",
+            )
+        ).strip()
+
+        if not file_id:
+            continue
+
+        normalized.append(
+            {
+                "file_id": file_id,
+                "filename": str(
+                    attachment.get(
+                        "filename",
+                        "",
+                    )
+                ).strip(),
+                "content_type": str(
+                    attachment.get(
+                        "content_type",
+                        "",
+                    )
+                ).strip(),
+            }
+        )
+
+    return normalized
+
+
+def _resolve_chat_upload_path(
+    file_id: str,
+) -> Path:
+    """
+    Resolve a previously uploaded chat file inside
+    NOVA's controlled chat-upload directory.
+    """
+
+    metadata = load_chat_file(
+        file_id
+    )
+
+    stored_name = str(
+        metadata.get(
+            "stored_name",
+            "",
+        )
+    ).strip()
+
+    if not stored_name:
+        raise ValueError(
+            "Uploaded file metadata does not contain a stored filename."
+        )
+
+    source_path = (
+        CHAT_UPLOADS_DIR
+        / Path(stored_name).name
+    ).resolve()
+
+    try:
+        source_path.relative_to(
+            CHAT_UPLOADS_DIR
+        )
+    except ValueError as exc:
+        raise PermissionError(
+            "Access denied: uploaded file is outside "
+            "NOVA's controlled attachment directory."
+        ) from exc
+
+    if not source_path.exists():
+        raise FileNotFoundError(
+            f"Uploaded file not found: {file_id}"
+        )
+
+    if not source_path.is_file():
+        raise ValueError(
+            "Uploaded attachment is not a file."
+        )
+
+    return source_path
+
+
+def _stage_spreadsheet_attachment(
+    attachment: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Copy an uploaded spreadsheet into NOVA's controlled
+    workspace/input directory.
+
+    The planner and spreadsheet tools operate only on the
+    controlled NOVA workspace, so uploaded attachments are
+    staged there before agent execution.
+    """
+
+    file_id = attachment.get(
+        "file_id",
+        "",
+    )
+
+    if not file_id:
+        raise ValueError(
+            "Spreadsheet attachment is missing file_id."
+        )
+
+    source_path = _resolve_chat_upload_path(
+        str(file_id)
+    )
+
+    extension = source_path.suffix.lower()
+
+    if extension not in ALLOWED_SPREADSHEET_EXTENSIONS:
+        raise ValueError(
+            "Agent spreadsheet analysis supports only "
+            "CSV and XLSX attachments."
+        )
+
+    original_filename = (
+        attachment.get(
+            "filename"
+        )
+        or source_path.name
+    )
+
+    original_filename = Path(
+        str(original_filename)
+    ).name
+
+    if not original_filename:
+        original_filename = source_path.name
+
+    safe_filename = (
+        f"{file_id}_{original_filename}"
+    )
+
+    destination_path = (
+        WORKSPACE_INPUT_DIR
+        / safe_filename
+    ).resolve()
+
+    try:
+        destination_path.relative_to(
+            WORKSPACE_INPUT_DIR
+        )
+    except ValueError as exc:
+        raise PermissionError(
+            "Access denied: staged spreadsheet must remain "
+            "inside NOVA's workspace input directory."
+        ) from exc
+
+    WORKSPACE_INPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    shutil.copy2(
+        source_path,
+        destination_path,
+    )
+
+    if not destination_path.exists():
+        raise RuntimeError(
+            "Uploaded spreadsheet could not be staged "
+            "into the NOVA workspace."
+        )
+
+    return {
+        "file_id": str(file_id),
+        "original_filename": original_filename,
+        "workspace_file_path": str(
+            destination_path.relative_to(
+                WORKSPACE_ROOT
+            )
+        ).replace(
+            "\\",
+            "/",
+        ),
+        "workspace_absolute_path": str(
+            destination_path
+        ),
+        "extension": extension,
+    }
+
+
+def _prepare_agent_context(
+    context: Optional[Dict[str, Any]],
+    objective: str,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """
+    Prepare context for agent execution.
+
+    Uploaded spreadsheet attachments are staged into
+    NOVA's controlled workspace and their workspace paths
+    are exposed to the planner through the objective.
+    """
+
+    prepared_context: Dict[str, Any] = dict(
+        context or {}
+    )
+
+    attachments = _get_context_attachments(
+        context
+    )
+
+    if not attachments:
+        return (
+            prepared_context,
+            [],
+        )
+
+    staged_attachments: List[Dict[str, Any]] = []
+
+    for attachment in attachments:
+        staged = _stage_spreadsheet_attachment(
+            attachment
+        )
+
+        staged_attachments.append(
+            staged
+        )
+
+    prepared_context[
+        "attachments"
+    ] = staged_attachments
+
+    spreadsheet_paths = [
+        item["workspace_file_path"]
+        for item in staged_attachments
+    ]
+
+    prepared_context[
+        "spreadsheet_files"
+    ] = spreadsheet_paths
+
+    if spreadsheet_paths:
+        attachment_instruction = (
+            "\n\nUploaded spreadsheet attachment(s) are available "
+            "inside the NOVA workspace at:\n"
+            + "\n".join(
+                f"- {path}"
+                for path in spreadsheet_paths
+            )
+            + "\nUse these local paths when the user's request "
+            "requires spreadsheet analysis."
+        )
+
+        prepared_context[
+            "agent_objective"
+        ] = (
+            objective
+            + attachment_instruction
+        )
+
+    return (
+        prepared_context,
+        staged_attachments,
+    )
+
+
+def _cleanup_staged_files(
+    staged_attachments: List[Dict[str, Any]],
+) -> None:
+    """
+    Remove temporary spreadsheet copies created for the
+    agent execution.
+    """
+
+    for attachment in staged_attachments:
+        path_value = attachment.get(
+            "workspace_absolute_path"
+        )
+
+        if not path_value:
+            continue
+
+        path = Path(
+            str(path_value)
+        ).resolve()
+
+        try:
+            path.relative_to(
+                WORKSPACE_INPUT_DIR
+            )
+        except ValueError:
+            continue
+
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+        except OSError:
+            continue
+
+
+# ---------------------------------------------------------------------------
+# EXECUTION SERIALIZATION
+# ---------------------------------------------------------------------------
 
 def serialize_execution(
     execution: Any,
@@ -116,6 +502,10 @@ def build_synthesis_context(
     return context
 
 
+# ---------------------------------------------------------------------------
+# CONVERSATION HELPERS
+# ---------------------------------------------------------------------------
+
 def build_conversation_title(
     objective: str,
 ) -> str:
@@ -139,6 +529,10 @@ def build_conversation_title(
     )
 
 
+# ---------------------------------------------------------------------------
+# AGENT RUN
+# ---------------------------------------------------------------------------
+
 @router.post(
     "/run",
     response_model=AgentRunResponse,
@@ -155,6 +549,10 @@ def run_agent(
             status_code=400,
             detail="Objective cannot be empty.",
         )
+
+    staged_attachments: List[
+        Dict[str, Any]
+    ] = []
 
     try:
         # ---------------------------------------------------------------
@@ -181,11 +579,29 @@ def run_agent(
             )
 
         # ---------------------------------------------------------------
+        # PREPARE ATTACHMENTS
+        # ---------------------------------------------------------------
+
+        prepared_context, staged_attachments = (
+            _prepare_agent_context(
+                context=request.context,
+                objective=objective,
+            )
+        )
+
+        planner_objective = str(
+            prepared_context.get(
+                "agent_objective",
+                objective,
+            )
+        ).strip()
+
+        # ---------------------------------------------------------------
         # PLAN
         # ---------------------------------------------------------------
 
         plan = agent_planner.create_plan(
-            objective=objective,
+            objective=planner_objective,
         )
 
         # ---------------------------------------------------------------
@@ -198,7 +614,7 @@ def run_agent(
 
         execution = executor.execute(
             plan=plan,
-            context=request.context or {},
+            context=prepared_context,
         )
 
         # ---------------------------------------------------------------
@@ -241,13 +657,50 @@ def run_agent(
         # SAVE USER MESSAGE
         # ---------------------------------------------------------------
 
-        add_message(
+        saved_user_message = add_message(
             db=db,
             conversation=conversation,
             role="user",
             content=objective,
             model=None,
         )
+
+        # ---------------------------------------------------------------
+        # SAVE ATTACHMENT REFERENCES
+        # ---------------------------------------------------------------
+
+        for attachment in _get_context_attachments(
+            request.context
+        ):
+            try:
+                file_data = load_chat_file(
+                    attachment["file_id"]
+                )
+            except Exception:
+                continue
+
+            add_attachment(
+                db=db,
+                message=saved_user_message,
+                file_id=file_data.get(
+                    "file_id",
+                    attachment["file_id"],
+                ),
+                filename=file_data.get(
+                    "filename",
+                    attachment.get(
+                        "filename",
+                        "Unknown file",
+                    ),
+                ),
+                content_type=file_data.get(
+                    "content_type",
+                    attachment.get(
+                        "content_type",
+                        "",
+                    ),
+                ),
+            )
 
         # ---------------------------------------------------------------
         # SAVE ASSISTANT RESPONSE
@@ -284,3 +737,8 @@ def run_agent(
             status_code=500,
             detail=f"Agent execution failed: {exc}",
         ) from exc
+
+    finally:
+        _cleanup_staged_files(
+            staged_attachments
+        )

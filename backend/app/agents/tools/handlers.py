@@ -584,6 +584,11 @@ def _normalize_cell_value(
 ) -> Any:
     """
     Convert spreadsheet values into JSON-safe values.
+
+    Primitive values are preserved. Complex values such as
+    dates, formulas represented as objects, or other workbook
+    types are converted to strings so the result can safely
+    travel through the agent pipeline.
     """
 
     if value is None:
@@ -598,26 +603,106 @@ def _normalize_cell_value(
     return str(value)
 
 
+def _normalize_header(
+    value: Any,
+    index: int,
+) -> str:
+    """
+    Normalize a spreadsheet header into a stable string.
+    """
+
+    if value is None:
+        return f"Column {index + 1}"
+
+    header = str(value).strip()
+
+    if not header:
+        return f"Column {index + 1}"
+
+    return header
+
+
+def _normalize_headers(
+    headers: List[Any],
+) -> List[str]:
+    """
+    Normalize headers while preserving their order.
+    """
+
+    return [
+        _normalize_header(
+            value,
+            index,
+        )
+        for index, value in enumerate(
+            headers[:MAX_SPREADSHEET_COLUMNS]
+        )
+    ]
+
+
+def _normalize_row_to_width(
+    row: List[Any],
+    width: int,
+) -> List[Any]:
+    """
+    Make every row exactly the same width as the
+    detected spreadsheet headers.
+
+    Missing cells are represented as None.
+    Extra cells are safely truncated.
+    """
+
+    normalized = [
+        _normalize_cell_value(
+            value
+        )
+        for value in row[:width]
+    ]
+
+    if len(normalized) < width:
+        normalized.extend(
+            [None]
+            * (
+                width - len(normalized)
+            )
+        )
+
+    return normalized
+
+
 def _trim_rows(
     rows: List[List[Any]],
+    width: int | None = None,
 ) -> List[List[Any]]:
     """
-    Limit spreadsheet output to safe
-    dimensions for agent processing.
+    Limit spreadsheet output to safe dimensions
+    for agent processing.
+
+    Rows are normalized to a consistent column width.
     """
 
-    trimmed = []
+    if width is None:
+        width = MAX_SPREADSHEET_COLUMNS
+
+    width = max(
+        0,
+        min(
+            int(width),
+            MAX_SPREADSHEET_COLUMNS,
+        ),
+    )
+
+    trimmed: List[List[Any]] = []
 
     for row in rows[:MAX_SPREADSHEET_ROWS]:
+        if not isinstance(row, (list, tuple)):
+            row = [row]
+
         trimmed.append(
-            [
-                _normalize_cell_value(
-                    value
-                )
-                for value in row[
-                    :MAX_SPREADSHEET_COLUMNS
-                ]
-            ]
+            _normalize_row_to_width(
+                list(row),
+                width,
+            )
         )
 
     return trimmed
@@ -629,6 +714,13 @@ def _read_csv(
     """
     Read a local CSV file and normalize it
     into the same structure used by XLSX.
+
+    The CSV reader:
+    - supports common delimiters
+    - handles UTF-8 BOM
+    - limits rows and columns
+    - keeps blank cells as None
+    - normalizes all rows to the header width
     """
 
     file_size = path.stat().st_size
@@ -648,19 +740,43 @@ def _read_csv(
             newline="",
         ) as csv_file:
 
+            sample = csv_file.read(
+                4096
+            )
+
+            csv_file.seek(0)
+
+            try:
+                dialect = csv.Sniffer().sniff(
+                    sample,
+                    delimiters=",;\t|",
+                )
+            except csv.Error:
+                dialect = csv.excel
+
             reader = csv.reader(
-                csv_file
+                csv_file,
+                dialect,
             )
 
             for row in reader:
-                rows.append(row)
+                rows.append(
+                    row
+                )
 
-                if len(rows) >= MAX_SPREADSHEET_ROWS:
+                if len(rows) >= (
+                    MAX_SPREADSHEET_ROWS + 1
+                ):
                     break
 
     except UnicodeDecodeError as exc:
         raise ValueError(
             "CSV file is not valid UTF-8 text."
+        ) from exc
+
+    except csv.Error as exc:
+        raise ValueError(
+            "CSV file could not be parsed."
         ) from exc
 
     headers = (
@@ -669,23 +785,21 @@ def _read_csv(
         else []
     )
 
+    normalized_headers = _normalize_headers(
+        headers
+    )
+
     data_rows = (
         rows[1:]
         if len(rows) > 1
         else []
     )
 
-    normalized_headers = [
-        _normalize_cell_value(
-            value
-        )
-        for value in headers[
-            :MAX_SPREADSHEET_COLUMNS
-        ]
-    ]
-
     normalized_rows = _trim_rows(
-        data_rows
+        data_rows,
+        width=len(
+            normalized_headers
+        ),
     )
 
     sheet = {
@@ -713,6 +827,8 @@ def _read_xlsx(
 ) -> Dict[str, Any]:
     """
     Read a local XLSX workbook in read-only mode.
+
+    Only the calculated cell values are returned.
     """
 
     file_size = path.stat().st_size
@@ -732,7 +848,7 @@ def _read_xlsx(
             data_only=True,
         )
 
-        sheets = []
+        sheets: List[Dict[str, Any]] = []
 
         for worksheet in workbook.worksheets:
 
@@ -745,7 +861,9 @@ def _read_xlsx(
                     list(row)
                 )
 
-                if len(rows) >= MAX_SPREADSHEET_ROWS:
+                if len(rows) >= (
+                    MAX_SPREADSHEET_ROWS + 1
+                ):
                     break
 
             headers = (
@@ -754,32 +872,33 @@ def _read_xlsx(
                 else []
             )
 
+            normalized_headers = _normalize_headers(
+                list(headers)
+            )
+
             data_rows = (
                 rows[1:]
                 if len(rows) > 1
                 else []
             )
 
+            normalized_rows = _trim_rows(
+                data_rows,
+                width=len(
+                    normalized_headers
+                ),
+            )
+
             sheets.append(
                 {
                     "sheet_name": worksheet.title,
-                    "headers": [
-                        _normalize_cell_value(
-                            value
-                        )
-                        for value in headers[
-                            :MAX_SPREADSHEET_COLUMNS
-                        ]
-                    ],
-                    "rows": _trim_rows(
-                        data_rows
-                    ),
+                    "headers": normalized_headers,
+                    "rows": normalized_rows,
                     "row_count": len(
-                        data_rows
+                        normalized_rows
                     ),
-                    "column_count": min(
-                        len(headers),
-                        MAX_SPREADSHEET_COLUMNS,
+                    "column_count": len(
+                        normalized_headers
                     ),
                 }
             )
@@ -806,6 +925,13 @@ def spreadsheet_reader_handler(
 ) -> Dict[str, Any]:
     """
     Safely inspect a local CSV or XLSX file.
+
+    This handler:
+    - validates the workspace path
+    - validates the extension
+    - enforces the file size limit
+    - reads CSV/XLSX locally
+    - returns structured sheet data for NOVA's agent
     """
 
     path = _resolve_workspace_file(
@@ -827,7 +953,8 @@ def spreadsheet_reader_handler(
     if extension not in ALLOWED_SPREADSHEET_EXTENSIONS:
         raise ValueError(
             "Unsupported spreadsheet type: "
-            f"{extension or '[no extension]'}"
+            f"{extension or '[no extension]'}. "
+            "Supported types are CSV and XLSX."
         )
 
     if extension == ".csv":
@@ -875,6 +1002,9 @@ def spreadsheet_analysis_handler(
 ) -> Dict[str, Any]:
     """
     Read and analyze a local CSV or XLSX spreadsheet.
+
+    The reader stays fully local and passes the structured
+    workbook data into the dedicated spreadsheet analyzer.
     """
 
     spreadsheet = spreadsheet_reader_handler(

@@ -23,6 +23,7 @@ import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
 const API_URL = "http://127.0.0.1:8001";
+
 const MODEL = "llama3.2:latest";
 
 const welcomeMessage = {
@@ -89,11 +90,29 @@ function emitAvatarState(state, audioLevel = 0) {
 }
 
 /*
+ * Check whether a browser file is a spreadsheet.
+ */
+function isSpreadsheetFile(file) {
+  if (!file?.name) {
+    return false;
+  }
+
+  const extension = file.name
+    .split(".")
+    .pop()
+    ?.toLowerCase();
+
+  return (
+    extension === "xlsx" ||
+    extension === "csv"
+  );
+}
+
+/*
  * Decide whether the user is asking for an agentic workflow.
  *
  * Normal conversation remains on /api/chat/.
- * Explicit local knowledge / planning / execution / artifact
- * generation requests use /api/agents/run.
+ * Agent requests use /api/agents/run.
  */
 function isAgentRequest(message) {
   const text = message.toLowerCase().trim();
@@ -132,6 +151,75 @@ function isAgentRequest(message) {
     "investigate",
     "root cause",
 
+    // Explicit Python/code execution
+    "execute python",
+    "run python",
+    "using python",
+    "with python",
+    "execute code",
+    "run code",
+    "calculate using python",
+    "calculate in python",
+    "compute using python",
+    "compute in python",
+    "solve using python",
+    "solve in python",
+    "python calculation",
+    "python computation",
+    "python program",
+    "write python code",
+    "run this python",
+    "execute this python",
+    "code execution",
+
+    // Calculation / computational requests
+    "calculate ",
+    "calculate\t",
+    "compute ",
+    "compute\t",
+    "factorial",
+    "fibonacci",
+    "arithmetic",
+    "mathematical calculation",
+    "math calculation",
+    "solve this equation",
+    "solve the equation",
+    "calculate the sum",
+    "calculate the average",
+    "calculate the maximum",
+    "calculate the minimum",
+
+    // Spreadsheet / Excel / CSV
+    "spreadsheet",
+    "excel",
+    "excel file",
+    "excel sheet",
+    "excel workbook",
+    "workbook",
+    "worksheet",
+    "csv",
+    ".csv",
+    ".xlsx",
+    ".xls",
+    "analyze spreadsheet",
+    "analyse spreadsheet",
+    "analyze the spreadsheet",
+    "analyse the spreadsheet",
+    "analyze excel",
+    "analyse excel",
+    "analyze the excel",
+    "analyse the excel",
+    "spreadsheet analysis",
+    "spreadsheet statistics",
+    "excel analysis",
+    "calculate from spreadsheet",
+    "calculate from excel",
+    "total revenue from",
+    "average revenue from",
+    "sales analysis",
+    "analyze sales",
+    "analyse sales",
+
     // Explicit DOCX / Word generation
     "create a docx",
     "create docx",
@@ -159,7 +247,7 @@ function isAgentRequest(message) {
     "write a pdf",
     ".pdf",
 
-    // Excel
+    // Excel generation
     "create an excel",
     "create excel",
     "generate an excel",
@@ -186,31 +274,34 @@ function isAgentRequest(message) {
 
   /*
    * Natural-language document generation.
-   *
-   * Examples:
-   * Create a document about cybersecurity
-   * Create a 5-page professional report on NOVA
-   * Generate a technical report on NOVA
-   * Prepare a project proposal for NOVA
-   * Draft a formal letter about ...
-   * Write meeting notes for ...
    */
   const naturalDocumentPattern =
-    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
+    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|document about|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
+
+  /*
+   * Natural-language computational requests.
+   */
+  const naturalComputationPattern =
+    /\b(calculate|compute|solve|evaluate|find)\b[\s\S]{0,120}\b(factorial|fibonacci|equation|average|sum|total|maximum|minimum|percentage|prime|power|square|cube|using python|with python|in python)\b/i;
+
+  /*
+   * Natural-language spreadsheet requests.
+   */
+  const naturalSpreadsheetPattern =
+    /\b(analyze|analyse|inspect|read|review|summarize|summarise|calculate|compute|find|compare|identify|show)\b[\s\S]{0,120}\b(spreadsheet|excel|workbook|worksheet|csv|xlsx|xls|sales data|sales sheet|sales file|table)\b/i;
 
   return (
     agentSignals.some((signal) =>
       text.includes(signal)
     ) ||
-    naturalDocumentPattern.test(text)
+    naturalDocumentPattern.test(text) ||
+    naturalComputationPattern.test(text) ||
+    naturalSpreadsheetPattern.test(text)
   );
 }
 
 /*
- * Decide whether the request specifically requires
- * automatic document artifact generation.
- *
- * This is intentionally broader than checking for ".docx".
+ * Detect direct document generation.
  */
 function isDocumentGenerationRequest(message) {
   const text = message.toLowerCase().trim();
@@ -248,16 +339,309 @@ function isDocumentGenerationRequest(message) {
   );
 }
 
+/*
+ * Detect computational/code-execution requests.
+ */
+function isCodeExecutionRequest(message) {
+  const text = message.toLowerCase().trim();
+
+  const directSignals = [
+    "execute python",
+    "run python",
+    "using python",
+    "with python",
+    "in python",
+    "calculate using python",
+    "calculate in python",
+    "compute using python",
+    "compute in python",
+    "solve using python",
+    "solve in python",
+    "execute code",
+    "run code",
+    "run this code",
+    "execute this code",
+    "code execution",
+    "python calculation",
+    "python computation",
+    "python program",
+    "factorial",
+    "fibonacci",
+  ];
+
+  const calculationPattern =
+    /\b(calculate|compute|solve|evaluate|find)\b[\s\S]{0,100}\b(sum|average|total|factorial|fibonacci|equation|percentage|maximum|minimum|prime|power|square|cube|using python|with python|in python)\b/i;
+
+  return (
+    directSignals.some((signal) =>
+      text.includes(signal)
+    ) ||
+    calculationPattern.test(text)
+  );
+}
+
+/*
+ * Detect spreadsheet analysis requests.
+ */
+function isSpreadsheetRequest(message) {
+  const text = message.toLowerCase().trim();
+
+  const directSignals = [
+    "spreadsheet",
+    "excel",
+    "excel file",
+    "excel sheet",
+    "excel workbook",
+    "workbook",
+    "worksheet",
+    "csv",
+    ".csv",
+    ".xlsx",
+    ".xls",
+    "spreadsheet analysis",
+    "spreadsheet statistics",
+    "excel analysis",
+    "analyze spreadsheet",
+    "analyse spreadsheet",
+    "analyze the spreadsheet",
+    "analyse the spreadsheet",
+    "analyze excel",
+    "analyse excel",
+    "analyze the excel",
+    "analyse the excel",
+    "calculate from spreadsheet",
+    "calculate from excel",
+    "sales analysis",
+    "analyze sales",
+    "analyse sales",
+    "analyze sales data",
+    "analyse sales data",
+  ];
+
+  const naturalPattern =
+    /\b(analyze|analyse|inspect|read|review|summarize|summarise|calculate|compute|find|compare|identify|show)\b[\s\S]{0,120}\b(spreadsheet|excel|workbook|worksheet|csv|xlsx|xls|sales data|sales sheet|sales file|table)\b/i;
+
+  return (
+    directSignals.some((signal) =>
+      text.includes(signal)
+    ) ||
+    naturalPattern.test(text)
+  );
+}
+
 function getStepStatusIcon(status) {
-  if (status === "completed") {
-    return <CheckCircle2 size={13} />;
+  const norm = String(
+    status || ""
+  ).toLowerCase();
+
+  if (
+    norm === "completed" ||
+    norm === "success"
+  ) {
+    return (
+      <CheckCircle2
+        size={13}
+      />
+    );
   }
 
-  if (status === "failed") {
-    return <AlertCircle size={13} />;
+  if (
+    norm === "failed" ||
+    norm === "error"
+  ) {
+    return (
+      <AlertCircle
+        size={13}
+      />
+    );
   }
 
-  return <Activity size={13} />;
+  return (
+    <Activity
+      size={13}
+    />
+  );
+}
+
+function getWorkflowTitle(
+  plan,
+  execution,
+  artifacts = []
+) {
+  if (
+    plan?.title &&
+    typeof plan.title === "string"
+  ) {
+    return plan.title;
+  }
+
+  const steps =
+    plan?.steps || [];
+
+  const hasDocWriter =
+    steps.some(
+      (step) =>
+        step.tool ===
+          "document_writer" ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "document"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "docx"
+          )
+    );
+
+  const hasDocArtifact =
+    artifacts.some(
+      (artifact) =>
+        artifact.extension ===
+          ".docx" ||
+        artifact.extension ===
+          ".pdf" ||
+        artifact.extension ===
+          ".txt" ||
+        artifact.extension ===
+          ".md"
+    );
+
+  if (
+    hasDocWriter ||
+    hasDocArtifact
+  ) {
+    return "Document generation";
+  }
+
+  const hasVault =
+    steps.some(
+      (step) =>
+        step.tool
+          ?.toLowerCase()
+          .includes("vault") ||
+        step.tool
+          ?.toLowerCase()
+          .includes("search") ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "retrieval"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "search"
+          )
+    );
+
+  if (hasVault) {
+    return "Knowledge retrieval";
+  }
+
+  const hasSpreadsheet =
+    steps.some(
+      (step) =>
+        step.tool
+          ?.toLowerCase()
+          .includes("excel") ||
+        step.tool
+          ?.toLowerCase()
+          .includes("csv") ||
+        step.tool
+          ?.toLowerCase()
+          .includes(
+            "spreadsheet"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "spreadsheet"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "excel"
+          )
+    );
+
+  if (hasSpreadsheet) {
+    return "Spreadsheet workflow";
+  }
+
+  const hasCode =
+    steps.some(
+      (step) =>
+        step.tool
+          ?.toLowerCase()
+          .includes("python") ||
+        step.tool
+          ?.toLowerCase()
+          .includes("code") ||
+        step.tool
+          ?.toLowerCase()
+          .includes(
+            "calculator"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "compute"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "python"
+          ) ||
+        step.title
+          ?.toLowerCase()
+          .includes(
+            "execute"
+          )
+    );
+
+  if (hasCode) {
+    return "Computation workflow";
+  }
+
+  return "Agent workflow";
+}
+
+function getWorkflowSubtitle(
+  status = ""
+) {
+  const norm = String(
+    status || ""
+  ).toLowerCase();
+
+  if (
+    norm === "completed" ||
+    norm === "success"
+  ) {
+    return "Task completed successfully";
+  }
+
+  if (
+    norm === "failed" ||
+    norm === "error"
+  ) {
+    return "Task execution encountered errors";
+  }
+
+  if (norm === "blocked") {
+    return "Task execution was blocked";
+  }
+
+  if (
+    norm === "executing" ||
+    norm === "in_progress" ||
+    norm === "running"
+  ) {
+    return "NOVA is executing the workflow";
+  }
+
+  return "Workflow in progress";
 }
 
 /*
@@ -269,7 +653,9 @@ function getDownloadUrl(filePath) {
     return null;
   }
 
-  const normalizedPath = String(filePath)
+  const normalizedPath = String(
+    filePath
+  )
     .replace(/\\/g, "/")
     .replace(/^\/+/, "");
 
@@ -280,22 +666,30 @@ function getDownloadUrl(filePath) {
   const pathParts = normalizedPath
     .split("/")
     .filter(Boolean)
-    .map((part) => encodeURIComponent(part));
+    .map((part) =>
+      encodeURIComponent(part)
+    );
 
-  return `${API_URL}/api/chat/download/${pathParts.join("/")}`;
+  return `${API_URL}/api/chat/download/${pathParts.join(
+    "/"
+  )}`;
 }
 
 /*
  * Extract generated artifacts from the agent execution context.
  */
-function getAgentArtifacts(execution) {
+function getAgentArtifacts(
+  execution
+) {
   if (!execution?.context) {
     return [];
   }
 
   const artifacts = [];
 
-  Object.entries(execution.context).forEach(
+  Object.entries(
+    execution.context
+  ).forEach(
     ([stepId, result]) => {
       if (
         !result ||
@@ -307,16 +701,23 @@ function getAgentArtifacts(execution) {
 
       const filePath = String(
         result.file_path
-      ).replace(/\\/g, "/");
+      ).replace(
+        /\\/g,
+        "/"
+      );
 
       const fileName =
         result.file_name ||
-        filePath.split("/").pop() ||
+        filePath
+          .split("/")
+          .pop() ||
         `artifact-${stepId}`;
 
       const extension =
         result.extension ||
-        `.${fileName.split(".").pop()}`;
+        `.${fileName
+          .split(".")
+          .pop()}`;
 
       artifacts.push({
         stepId,
@@ -324,10 +725,14 @@ function getAgentArtifacts(execution) {
         fileName,
         extension,
         sizeBytes:
-          typeof result.size_bytes === "number"
+          typeof result.size_bytes ===
+          "number"
             ? result.size_bytes
             : null,
-        downloadUrl: getDownloadUrl(filePath),
+        downloadUrl:
+          getDownloadUrl(
+            filePath
+          ),
       });
     }
   );
@@ -335,9 +740,12 @@ function getAgentArtifacts(execution) {
   return artifacts;
 }
 
-function formatArtifactSize(sizeBytes) {
+function formatArtifactSize(
+  sizeBytes
+) {
   if (
-    typeof sizeBytes !== "number" ||
+    typeof sizeBytes !==
+      "number" ||
     sizeBytes <= 0
   ) {
     return "";
@@ -347,8 +755,13 @@ function formatArtifactSize(sizeBytes) {
     return `${sizeBytes} B`;
   }
 
-  if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  if (
+    sizeBytes <
+    1024 * 1024
+  ) {
+    return `${(
+      sizeBytes / 1024
+    ).toFixed(1)} KB`;
   }
 
   return `${(
@@ -359,62 +772,108 @@ function formatArtifactSize(sizeBytes) {
 
 /*
  * Render NOVA Markdown responses as proper rich content.
- *
- * Markdown is rendered only for assistant messages.
- * User messages remain plain text.
  */
-function NovaMarkdown({ content }) {
+function NovaMarkdown({
+  content,
+}) {
   return (
     <div className="nova-markdown">
       <ReactMarkdown
         components={{
-          h1: ({ children }) => (
-            <h1>{children}</h1>
+          h1: ({
+            children,
+          }) => (
+            <h1>
+              {children}
+            </h1>
           ),
 
-          h2: ({ children }) => (
-            <h2>{children}</h2>
+          h2: ({
+            children,
+          }) => (
+            <h2>
+              {children}
+            </h2>
           ),
 
-          h3: ({ children }) => (
-            <h3>{children}</h3>
+          h3: ({
+            children,
+          }) => (
+            <h3>
+              {children}
+            </h3>
           ),
 
-          h4: ({ children }) => (
-            <h4>{children}</h4>
+          h4: ({
+            children,
+          }) => (
+            <h4>
+              {children}
+            </h4>
           ),
 
-          p: ({ children }) => (
-            <p>{children}</p>
+          p: ({
+            children,
+          }) => (
+            <p>
+              {children}
+            </p>
           ),
 
-          strong: ({ children }) => (
-            <strong>{children}</strong>
+          strong: ({
+            children,
+          }) => (
+            <strong>
+              {children}
+            </strong>
           ),
 
-          em: ({ children }) => (
-            <em>{children}</em>
+          em: ({
+            children,
+          }) => (
+            <em>
+              {children}
+            </em>
           ),
 
-          ul: ({ children }) => (
-            <ul>{children}</ul>
+          ul: ({
+            children,
+          }) => (
+            <ul>
+              {children}
+            </ul>
           ),
 
-          ol: ({ children }) => (
-            <ol>{children}</ol>
+          ol: ({
+            children,
+          }) => (
+            <ol>
+              {children}
+            </ol>
           ),
 
-          li: ({ children }) => (
-            <li>{children}</li>
+          li: ({
+            children,
+          }) => (
+            <li>
+              {children}
+            </li>
           ),
 
-          blockquote: ({ children }) => (
-            <blockquote>{children}</blockquote>
+          blockquote: ({
+            children,
+          }) => (
+            <blockquote>
+              {children}
+            </blockquote>
           ),
 
           hr: () => <hr />,
 
-          a: ({ href, children }) => (
+          a: ({
+            href,
+            children,
+          }) => (
             <a
               href={href}
               target="_blank"
@@ -431,7 +890,11 @@ function NovaMarkdown({ content }) {
           }) => {
             if (inline) {
               return (
-                <code className={className}>
+                <code
+                  className={
+                    className
+                  }
+                >
                   {children}
                 </code>
               );
@@ -439,37 +902,65 @@ function NovaMarkdown({ content }) {
 
             return (
               <pre className="nova-markdown-code-block">
-                <code className={className}>
+                <code
+                  className={
+                    className
+                  }
+                >
                   {children}
                 </code>
               </pre>
             );
           },
 
-          table: ({ children }) => (
+          table: ({
+            children,
+          }) => (
             <div className="nova-markdown-table-wrap">
-              <table>{children}</table>
+              <table>
+                {children}
+              </table>
             </div>
           ),
 
-          thead: ({ children }) => (
-            <thead>{children}</thead>
+          thead: ({
+            children,
+          }) => (
+            <thead>
+              {children}
+            </thead>
           ),
 
-          tbody: ({ children }) => (
-            <tbody>{children}</tbody>
+          tbody: ({
+            children,
+          }) => (
+            <tbody>
+              {children}
+            </tbody>
           ),
 
-          tr: ({ children }) => (
-            <tr>{children}</tr>
+          tr: ({
+            children,
+          }) => (
+            <tr>
+              {children}
+            </tr>
           ),
 
-          th: ({ children }) => (
-            <th>{children}</th>
+          th: ({
+            children,
+          }) => (
+            <th>
+              {children}
+            </th>
           ),
 
-          td: ({ children }) => (
-            <td>{children}</td>
+          td: ({
+            children,
+          }) => (
+            <td>
+              {children}
+            </td>
           ),
         }}
       >
@@ -485,27 +976,53 @@ export default function ChatWindow({
   onConversationSaved,
   onNewConversation,
 }) {
-  const [messages, setMessages] = useState([
-    welcomeMessage,
-  ]);
+  const [messages, setMessages] =
+    useState([
+      welcomeMessage,
+    ]);
 
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState("IDLE");
-  const [error, setError] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [isLoadingConversation, setIsLoadingConversation] =
+  const [input, setInput] =
+    useState("");
+
+  const [status, setStatus] =
+    useState("IDLE");
+
+  const [error, setError] =
+    useState("");
+
+  const [isSending, setIsSending] =
     useState(false);
 
-  const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const idleTimerRef = useRef(null);
+  const [
+    selectedFiles,
+    setSelectedFiles,
+  ] = useState([]);
+
+  const [
+    isLoadingConversation,
+    setIsLoadingConversation,
+  ] = useState(false);
+
+  const messagesEndRef =
+    useRef(null);
+
+  const textareaRef =
+    useRef(null);
+
+  const fileInputRef =
+    useRef(null);
+
+  const idleTimerRef =
+    useRef(null);
 
   useEffect(() => {
     return () => {
-      if (idleTimerRef.current) {
-        window.clearTimeout(idleTimerRef.current);
+      if (
+        idleTimerRef.current
+      ) {
+        window.clearTimeout(
+          idleTimerRef.current
+        );
       }
     };
   }, []);
@@ -513,70 +1030,97 @@ export default function ChatWindow({
   useEffect(() => {
     let cancelled = false;
 
-    const loadConversation = async () => {
-      if (!conversationId) {
-        setMessages([welcomeMessage]);
-        setStatus("IDLE");
+    const loadConversation =
+      async () => {
+        if (!conversationId) {
+          setMessages([
+            welcomeMessage,
+          ]);
+
+          setStatus("IDLE");
+          setError("");
+
+          emitAvatarState(
+            "idle"
+          );
+
+          return;
+        }
+
+        setIsLoadingConversation(
+          true
+        );
+
         setError("");
 
-        emitAvatarState("idle");
-
-        return;
-      }
-
-      setIsLoadingConversation(true);
-      setError("");
-
-      emitAvatarState("idle");
-
-      try {
-        const response = await fetch(
-          `${API_URL}/api/history/conversations/${conversationId}`
+        emitAvatarState(
+          "idle"
         );
 
-        if (!response.ok) {
-          throw new Error(
-            "Unable to load this conversation."
+        try {
+          const response =
+            await fetch(
+              `${API_URL}/api/history/conversations/${conversationId}`
+            );
+
+          if (!response.ok) {
+            throw new Error(
+              "Unable to load this conversation."
+            );
+          }
+
+          const data =
+            await response.json();
+
+          if (cancelled) {
+            return;
+          }
+
+          setMessages(
+            data.messages?.length
+              ? data.messages.map(
+                  mapHistoryMessage
+                )
+              : [welcomeMessage]
           );
-        }
 
-        const data = await response.json();
+          setStatus("IDLE");
 
-        if (cancelled) {
-          return;
-        }
-
-        setMessages(
-          data.messages?.length
-            ? data.messages.map(mapHistoryMessage)
-            : [welcomeMessage]
-        );
-
-        setStatus("IDLE");
-        emitAvatarState("idle");
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error(
-          "Conversation loading error:",
+          emitAvatarState(
+            "idle"
+          );
+        } catch (
           requestError
-        );
+        ) {
+          if (cancelled) {
+            return;
+          }
 
-        setError(
-          requestError?.message ||
-            "Unable to load conversation."
-        );
+          console.error(
+            "Conversation loading error:",
+            requestError
+          );
 
-        setMessages([welcomeMessage]);
-        emitAvatarState("idle");
-      } finally {
-        if (!cancelled) {
-          setIsLoadingConversation(false);
+          setError(
+            requestError?.message ||
+              "Unable to load conversation."
+          );
+
+          setMessages([
+            welcomeMessage,
+          ]);
+
+          emitAvatarState(
+            "idle"
+          );
+        } finally {
+          if (!cancelled) {
+            setIsLoadingConversation(
+              false
+            );
+          }
         }
-      }
-    };
+      };
 
     loadConversation();
 
@@ -586,10 +1130,12 @@ export default function ChatWindow({
   }, [conversationId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
+    messagesEndRef.current?.scrollIntoView(
+      {
+        behavior: "smooth",
+        block: "end",
+      }
+    );
   }, [
     messages,
     status,
@@ -597,13 +1143,15 @@ export default function ChatWindow({
   ]);
 
   const autoResize = () => {
-    const textarea = textareaRef.current;
+    const textarea =
+      textareaRef.current;
 
     if (!textarea) {
       return;
     }
 
-    textarea.style.height = "auto";
+    textarea.style.height =
+      "auto";
 
     textarea.style.height = `${Math.min(
       textarea.scrollHeight,
@@ -611,13 +1159,21 @@ export default function ChatWindow({
     )}px`;
   };
 
-  const handleInputChange = (event) => {
-    setInput(event.target.value);
+  const handleInputChange = (
+    event
+  ) => {
+    setInput(
+      event.target.value
+    );
 
-    requestAnimationFrame(autoResize);
+    requestAnimationFrame(
+      autoResize
+    );
   };
 
-  const handleFileSelection = (event) => {
+  const handleFileSelection = (
+    event
+  ) => {
     const files = Array.from(
       event.target.files || []
     );
@@ -628,138 +1184,225 @@ export default function ChatWindow({
 
     setError("");
 
-    const maxSize = 20 * 1024 * 1024;
+    const maxSize =
+      20 * 1024 * 1024;
 
-    const validFiles = files.filter(
-      (file) => file.size <= maxSize
-    );
+    const validFiles =
+      files.filter(
+        (file) =>
+          file.size <= maxSize
+      );
 
-    const oversizedFiles = files.filter(
-      (file) => file.size > maxSize
-    );
+    const oversizedFiles =
+      files.filter(
+        (file) =>
+          file.size > maxSize
+      );
 
-    if (oversizedFiles.length) {
+    if (
+      oversizedFiles.length
+    ) {
       setError(
         "One or more files exceed the 20 MB limit."
       );
     }
 
-    setSelectedFiles((current) => {
-      const existing = new Set(
-        current.map(
-          (file) =>
-            `${file.name}-${file.size}`
-        )
-      );
+    setSelectedFiles(
+      (current) => {
+        const existing =
+          new Set(
+            current.map(
+              (file) =>
+                `${file.name}-${file.size}`
+            )
+          );
 
-      const next = [...current];
+        const next = [
+          ...current,
+        ];
 
-      for (const file of validFiles) {
-        const key = `${file.name}-${file.size}`;
+        for (
+          const file of validFiles
+        ) {
+          const key = `${file.name}-${file.size}`;
 
-        if (!existing.has(key)) {
-          next.push(file);
+          if (
+            !existing.has(key)
+          ) {
+            next.push(file);
+          }
         }
-      }
 
-      return next;
-    });
+        return next;
+      }
+    );
 
     event.target.value = "";
   };
 
-  const removeFile = (fileToRemove) => {
-    setSelectedFiles((current) =>
-      current.filter(
-        (file) =>
-          !(
-            file.name === fileToRemove.name &&
-            file.size === fileToRemove.size
-          )
-      )
+  const removeFile = (
+    fileToRemove
+  ) => {
+    setSelectedFiles(
+      (current) =>
+        current.filter(
+          (file) =>
+            !(
+              file.name ===
+                fileToRemove.name &&
+              file.size ===
+                fileToRemove.size
+            )
+        )
     );
   };
 
-  const uploadSelectedFiles = async () => {
-    if (!selectedFiles.length) {
-      return [];
-    }
+  /*
+   * Upload currently selected files to NOVA.
+   */
+  const uploadSelectedFiles =
+    async () => {
+      if (
+        !selectedFiles.length
+      ) {
+        return [];
+      }
 
-    const uploaded = [];
+      const uploaded = [];
 
-    for (const file of selectedFiles) {
-      const formData = new FormData();
+      for (
+        const file of selectedFiles
+      ) {
+        const formData =
+          new FormData();
 
-      formData.append("file", file);
+        formData.append(
+          "file",
+          file
+        );
 
-      const response = await fetch(
-        `${API_URL}/api/chat/upload`,
-        {
-          method: "POST",
-          body: formData,
+        const response =
+          await fetch(
+            `${API_URL}/api/chat/upload`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+        if (!response.ok) {
+          const errorText =
+            await response.text();
+
+          throw new Error(
+            errorText ||
+              `Failed to upload ${file.name}`
+          );
         }
-      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
+        const data =
+          await response.json();
 
-        throw new Error(
-          errorText ||
-            `Failed to upload ${file.name}`
-        );
+        if (
+          !data.file?.file_id
+        ) {
+          throw new Error(
+            `Backend did not return a file ID for ${file.name}.`
+          );
+        }
+
+        uploaded.push({
+          file_id:
+            data.file.file_id,
+          filename:
+            data.file.filename,
+          content_type:
+            data.file
+              .content_type ||
+            file.type,
+          extension:
+            data.file.extension ||
+            `.${file.name
+              .split(".")
+              .pop()
+              ?.toLowerCase()}`,
+          file_type:
+            data.file.file_type ||
+            "",
+        });
       }
 
-      const data = await response.json();
-
-      if (!data.file?.file_id) {
-        throw new Error(
-          `Backend did not return a file ID for ${file.name}.`
-        );
-      }
-
-      uploaded.push({
-        file_id: data.file.file_id,
-        filename: data.file.filename,
-        content_type:
-          data.file.content_type || file.type,
-      });
-    }
-
-    return uploaded;
-  };
+      return uploaded;
+    };
 
   /*
    * Run NOVA's agent endpoint.
    *
-   * Document generation is automatically confirmed
-   * because the user explicitly requested creation
-   * of an artifact.
+   * Attachments are provided through context so the backend
+   * can stage local spreadsheet files into NOVA's workspace.
    */
-  const runAgent = async (message) => {
+  const runAgent = async (
+    message,
+    uploadedFiles = []
+  ) => {
     const directDocumentGeneration =
-      isDocumentGenerationRequest(message);
+      isDocumentGenerationRequest(
+        message
+      );
 
-    const response = await fetch(
-      `${API_URL}/api/agents/run`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          objective: message,
-          context: {
-            conversation_id:
-              conversationId || null,
-            source: "nova-local-chat",
+    const directCodeExecution =
+      isCodeExecutionRequest(
+        message
+      );
+
+    const directSpreadsheetAnalysis =
+      isSpreadsheetRequest(
+        message
+      ) ||
+      uploadedFiles.some(
+        (file) =>
+          file.extension === ".xlsx" ||
+          file.extension === ".csv"
+      );
+
+    const response =
+      await fetch(
+        `${API_URL}/api/agents/run`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
           },
-          auto_confirm:
-            directDocumentGeneration,
-        }),
-      }
-    );
 
-    const data = await response.json();
+          body: JSON.stringify({
+            objective:
+              message ||
+              "Analyze the attached spreadsheet.",
+
+            context: {
+              conversation_id:
+                conversationId ||
+                null,
+
+              source:
+                "nova-local-chat",
+
+              attachments:
+                uploadedFiles,
+            },
+
+            auto_confirm:
+              directDocumentGeneration ||
+              directCodeExecution ||
+              directSpreadsheetAnalysis,
+          }),
+        }
+      );
+
+    const data =
+      await response.json();
 
     if (!response.ok) {
       throw new Error(
@@ -774,290 +1417,457 @@ export default function ChatWindow({
   /*
    * Run the existing normal chat endpoint.
    */
-  const runNormalChat = async (
-    message,
-    uploadedFiles
-  ) => {
-    const response = await fetch(
-      `${API_URL}/api/chat/`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message,
-          model: MODEL,
-          conversation_id:
-            conversationId || null,
-          attachments: uploadedFiles,
-        }),
+  const runNormalChat =
+    async (
+      message,
+      uploadedFiles
+    ) => {
+      const response =
+        await fetch(
+          `${API_URL}/api/chat/`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              message,
+
+              model: MODEL,
+
+              conversation_id:
+                conversationId ||
+                null,
+
+              attachments:
+                uploadedFiles,
+            }),
+          }
+        );
+
+      if (!response.ok) {
+        const errorText =
+          await response.text();
+
+        throw new Error(
+          errorText ||
+            "NOVA could not process the request."
+        );
       }
-    );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      throw new Error(
-        errorText ||
-          "NOVA could not process the request."
-      );
-    }
-
-    return response.json();
-  };
-
-  const sendMessage = async () => {
-    const message = input.trim();
-
-    if (
-      (!message && !selectedFiles.length) ||
-      isSending
-    ) {
-      return;
-    }
-
-    setError("");
-    setIsSending(true);
-
-    /*
-     * Attachments continue through normal chat because
-     * the current Agent API does not yet accept uploaded
-     * attachment references.
-     */
-    const useAgent =
-      !selectedFiles.length &&
-      isAgentRequest(message);
-
-    const initialStatus = selectedFiles.length
-      ? "ANALYZING"
-      : useAgent
-        ? "PLANNING"
-        : "THINKING";
-
-    setStatus(initialStatus);
-
-    emitAvatarState("thinking");
-
-    const attachedFileMetadata =
-      selectedFiles.map((file) => ({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }));
-
-    const userMessage = {
-      id: createId("user"),
-      role: "user",
-      content:
-        message ||
-        "Please analyze the attached file.",
-      time: new Date(),
-      attachments: attachedFileMetadata,
-      agent: null,
+      return response.json();
     };
 
-    setMessages((current) => [
-      ...current,
-      userMessage,
-    ]);
+  const sendMessage =
+    async () => {
+      const message =
+        input.trim();
 
-    setInput("");
-
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.style.height =
-          "auto";
+      if (
+        (!message &&
+          !selectedFiles.length) ||
+        isSending
+      ) {
+        return;
       }
-    });
 
-    try {
+      setError("");
+
+      setIsSending(true);
+
       /*
-       * =============================================================
-       * AGENTIC PIPELINE
-       * =============================================================
+       * Determine whether the selected files contain
+       * spreadsheets. Spreadsheet attachments use the
+       * agent pipeline.
        */
+      const hasSpreadsheetAttachment =
+        selectedFiles.some(
+          (file) =>
+            isSpreadsheetFile(file)
+        );
 
-      if (useAgent) {
-        setStatus("PLANNING");
+      const useAgent =
+        hasSpreadsheetAttachment ||
+        (
+          !selectedFiles.length &&
+          isAgentRequest(message)
+        );
 
-        const agentData =
-          await runAgent(message);
+      const initialStatus =
+        useAgent
+          ? "PLANNING"
+          : selectedFiles.length
+            ? "ANALYZING"
+            : "THINKING";
 
-        setStatus("EXECUTING");
+      setStatus(
+        initialStatus
+      );
 
-        const assistantText =
-          agentData.response ||
-          "NOVA completed the agent workflow.";
+      emitAvatarState(
+        "thinking"
+      );
 
-        const assistantMessage = {
-          id: createId("nova"),
-          role: "assistant",
-          content: assistantText,
-          time: new Date(),
-          attachments: [],
-          agent: {
-            plan: agentData.plan || null,
-            execution:
-              agentData.execution || null,
-            artifacts: getAgentArtifacts(
-              agentData.execution
-            ),
-          },
-        };
-
-        setMessages((current) => [
-          ...current,
-          assistantMessage,
-        ]);
-
-        window.dispatchEvent(
-          new CustomEvent("nova:speak", {
-            detail: {
-              text: assistantText,
-            },
+      const attachedFileMetadata =
+        selectedFiles.map(
+          (file) => ({
+            name: file.name,
+            size: file.size,
+            type: file.type,
           })
         );
 
-        setStatus("RESPONDING");
+      const userMessage = {
+        id: createId(
+          "user"
+        ),
+
+        role: "user",
+
+        content:
+          message ||
+          "Please analyze the attached file.",
+
+        time: new Date(),
+
+        attachments:
+          attachedFileMetadata,
+
+        agent: null,
+      };
+
+      setMessages(
+        (current) => [
+          ...current,
+          userMessage,
+        ]
+      );
+
+      setInput("");
+
+      requestAnimationFrame(
+        () => {
+          if (
+            textareaRef.current
+          ) {
+            textareaRef.current.style.height =
+              "auto";
+          }
+        }
+      );
+
+      try {
+        /*
+         * =============================================================
+         * AGENTIC PIPELINE
+         * =============================================================
+         */
+
+        if (useAgent) {
+          setStatus(
+            "ANALYZING"
+          );
+
+          /*
+           * Upload spreadsheet attachment first.
+           *
+           * The backend needs the returned file_id in order
+           * to stage the uploaded spreadsheet into its
+           * controlled workspace.
+           */
+          const uploadedFiles =
+            selectedFiles.length
+              ? await uploadSelectedFiles()
+              : [];
+
+          setStatus(
+            "PLANNING"
+          );
+
+          const agentMessage =
+            message ||
+            (
+              hasSpreadsheetAttachment
+                ? "Analyze the attached spreadsheet and provide a useful summary."
+                : "Process this agent task."
+            );
+
+          const agentData =
+            await runAgent(
+              agentMessage,
+              uploadedFiles
+            );
+
+          /*
+           * The backend creates/reuses the conversation.
+           * Keep the frontend attached to the returned ID.
+           */
+          if (
+            agentData.conversation_id &&
+            agentData.conversation_id !==
+              conversationId
+          ) {
+            onConversationChange(
+              agentData.conversation_id
+            );
+          }
+
+          /*
+           * Refresh Recent Chats immediately.
+           */
+          onConversationSaved();
+
+          setStatus(
+            "EXECUTING"
+          );
+
+          const assistantText =
+            agentData.response ||
+            "NOVA completed the agent workflow.";
+
+          const assistantMessage =
+            {
+              id: createId(
+                "nova"
+              ),
+
+              role: "assistant",
+
+              content:
+                assistantText,
+
+              time: new Date(),
+
+              attachments: [],
+
+              agent: {
+                plan:
+                  agentData.plan ||
+                  null,
+
+                execution:
+                  agentData.execution ||
+                  null,
+
+                artifacts:
+                  getAgentArtifacts(
+                    agentData.execution
+                  ),
+              },
+            };
+
+          setMessages(
+            (current) => [
+              ...current,
+              assistantMessage,
+            ]
+          );
+
+          window.dispatchEvent(
+            new CustomEvent(
+              "nova:speak",
+              {
+                detail: {
+                  text:
+                    assistantText,
+                },
+              }
+            )
+          );
+
+          setStatus(
+            "RESPONDING"
+          );
+
+          emitAvatarState(
+            "speaking",
+            0.7
+          );
+
+          setSelectedFiles([]);
+
+          if (
+            agentData.plan?.status ===
+            "failed"
+          ) {
+            setStatus(
+              "ERROR"
+            );
+          }
+
+          if (
+            idleTimerRef.current
+          ) {
+            window.clearTimeout(
+              idleTimerRef.current
+            );
+          }
+
+          idleTimerRef.current =
+            window.setTimeout(
+              () => {
+                setStatus(
+                  "IDLE"
+                );
+
+                emitAvatarState(
+                  "idle",
+                  0
+                );
+              },
+              900
+            );
+
+          return;
+        }
+
+        /*
+         * =============================================================
+         * NORMAL CHAT PIPELINE
+         * =============================================================
+         */
+
+        const uploadedFiles =
+          await uploadSelectedFiles();
+
+        emitAvatarState(
+          "thinking"
+        );
+
+        const data =
+          await runNormalChat(
+            message ||
+              "Analyze the attached file.",
+            uploadedFiles
+          );
+
+        setStatus(
+          "RESPONDING"
+        );
 
         emitAvatarState(
           "speaking",
           0.7
         );
 
+        const responseText =
+          data.response ||
+          "NOVA did not return a response.";
+
+        const assistantMessage =
+          {
+            id: createId(
+              "nova"
+            ),
+
+            role: "assistant",
+
+            content:
+              responseText,
+
+            time: new Date(),
+
+            attachments: [],
+
+            agent: null,
+          };
+
+        window.dispatchEvent(
+          new CustomEvent(
+            "nova:speak",
+            {
+              detail: {
+                text:
+                  responseText,
+              },
+            }
+          )
+        );
+
+        setMessages(
+          (current) => [
+            ...current,
+            assistantMessage,
+          ]
+        );
+
+        setSelectedFiles([]);
+
         if (
-          agentData.plan?.status ===
-          "failed"
+          data.conversation_id &&
+          data.conversation_id !==
+            conversationId
         ) {
-          setStatus("ERROR");
+          onConversationChange(
+            data.conversation_id
+          );
         }
 
-        if (idleTimerRef.current) {
+        onConversationSaved();
+
+        setStatus(
+          "COMPLETE"
+        );
+
+        if (
+          idleTimerRef.current
+        ) {
           window.clearTimeout(
             idleTimerRef.current
           );
         }
 
         idleTimerRef.current =
-          window.setTimeout(() => {
-            setStatus("IDLE");
+          window.setTimeout(
+            () => {
+              setStatus(
+                "IDLE"
+              );
 
-            emitAvatarState(
-              "idle",
-              0
-            );
-          }, 900);
-
-        return;
-      }
-
-      /*
-       * =============================================================
-       * NORMAL CHAT PIPELINE
-       * =============================================================
-       */
-
-      const uploadedFiles =
-        await uploadSelectedFiles();
-
-      emitAvatarState("thinking");
-
-      const data =
-        await runNormalChat(
-          message ||
-            "Analyze the attached file.",
-          uploadedFiles
-        );
-
-      setStatus("RESPONDING");
-
-      emitAvatarState(
-        "speaking",
-        0.7
-      );
-
-      const responseText =
-        data.response ||
-        "NOVA did not return a response.";
-
-      const assistantMessage = {
-        id: createId("nova"),
-        role: "assistant",
-        content: responseText,
-        time: new Date(),
-        attachments: [],
-        agent: null,
-      };
-
-      window.dispatchEvent(
-        new CustomEvent("nova:speak", {
-          detail: {
-            text: responseText,
-          },
-        })
-      );
-
-      setMessages((current) => [
-        ...current,
-        assistantMessage,
-      ]);
-
-      setSelectedFiles([]);
-
-      if (
-        data.conversation_id &&
-        data.conversation_id !== conversationId
-      ) {
-        onConversationChange(
-          data.conversation_id
-        );
-      }
-
-      onConversationSaved();
-
-      setStatus("COMPLETE");
-
-      if (idleTimerRef.current) {
-        window.clearTimeout(
-          idleTimerRef.current
-        );
-      }
-
-      idleTimerRef.current =
-        window.setTimeout(() => {
-          setStatus("IDLE");
-
-          emitAvatarState(
-            "idle",
-            0
+              emitAvatarState(
+                "idle",
+                0
+              );
+            },
+            900
           );
-        }, 900);
-    } catch (requestError) {
-      console.error(
-        "NOVA request error:",
+      } catch (
         requestError
-      );
+      ) {
+        console.error(
+          "NOVA request error:",
+          requestError
+        );
 
-      setError(
-        requestError?.message ||
-          "Something went wrong while contacting NOVA."
-      );
+        setError(
+          requestError?.message ||
+            "Something went wrong while contacting NOVA."
+        );
 
-      setStatus("ERROR");
+        setStatus(
+          "ERROR"
+        );
 
-      emitAvatarState(
-        "idle",
-        0
-      );
-    } finally {
-      setIsSending(false);
-    }
-  };
+        emitAvatarState(
+          "idle",
+          0
+        );
+      } finally {
+        setIsSending(
+          false
+        );
+      }
+    };
 
-  const handleKeyDown = (event) => {
+  const handleKeyDown = (
+    event
+  ) => {
     if (
-      event.key === "Enter" &&
+      event.key ===
+        "Enter" &&
       !event.shiftKey
     ) {
       event.preventDefault();
@@ -1066,19 +1876,23 @@ export default function ChatWindow({
     }
   };
 
-  const handleNewConversation = () => {
-    setInput("");
-    setSelectedFiles([]);
-    setError("");
-    setStatus("IDLE");
+  const handleNewConversation =
+    () => {
+      setInput("");
 
-    emitAvatarState(
-      "idle",
-      0
-    );
+      setSelectedFiles([]);
 
-    onNewConversation();
-  };
+      setError("");
+
+      setStatus("IDLE");
+
+      emitAvatarState(
+        "idle",
+        0
+      );
+
+      onNewConversation();
+    };
 
   return (
     <div className="nova-chat-page">
@@ -1110,7 +1924,9 @@ export default function ChatWindow({
           <div className="nova-chat-title-row">
             <h1>
               NOVA
-              <span>LOCAL CHAT</span>
+              <span>
+                LOCAL CHAT
+              </span>
             </h1>
 
             <div className="nova-chat-live-badge">
@@ -1128,12 +1944,19 @@ export default function ChatWindow({
         <div className="nova-chat-hero-side">
           <div className="nova-chat-runtime-mark">
             <span>
-              <Sparkles size={13} />
+              <Sparkles
+                size={13}
+              />
             </span>
 
             <div>
-              <small>ACTIVE MODEL</small>
-              <strong>LLAMA 3.2</strong>
+              <small>
+                ACTIVE MODEL
+              </small>
+
+              <strong>
+                LLAMA 3.2
+              </strong>
             </div>
           </div>
         </div>
@@ -1162,49 +1985,83 @@ export default function ChatWindow({
           <Cpu size={15} />
 
           <div>
-            <small>MODEL</small>
-            <strong>LLAMA 3.2</strong>
+            <small>
+              MODEL
+            </small>
+
+            <strong>
+              LLAMA 3.2
+            </strong>
           </div>
         </div>
 
         <div className="nova-chat-command-item">
-          <LockKeyhole size={15} />
+          <LockKeyhole
+            size={15}
+          />
 
           <div>
-            <small>MODE</small>
-            <strong>LOCAL</strong>
+            <small>
+              MODE
+            </small>
+
+            <strong>
+              LOCAL
+            </strong>
           </div>
         </div>
 
         <div className="nova-chat-command-item">
-          <Activity size={15} />
+          <Activity
+            size={15}
+          />
 
           <div>
-            <small>STATE</small>
-            <strong>{status}</strong>
+            <small>
+              STATE
+            </small>
+
+            <strong>
+              {status}
+            </strong>
           </div>
         </div>
 
         <div className="nova-chat-command-item">
-          <BrainCircuit size={15} />
+          <BrainCircuit
+            size={15}
+          />
 
           <div>
-            <small>AGENT</small>
-            <strong>READY</strong>
+            <small>
+              AGENT
+            </small>
+
+            <strong>
+              READY
+            </strong>
           </div>
         </div>
 
         <div className="nova-chat-command-item">
-          <Sparkles size={15} />
+          <Sparkles
+            size={15}
+          />
 
           <div>
-            <small>ENGINE</small>
-            <strong>OLLAMA</strong>
+            <small>
+              ENGINE
+            </small>
+
+            <strong>
+              OLLAMA
+            </strong>
           </div>
         </div>
 
         <div className="nova-chat-security">
           <span className="nova-chat-security-line" />
+
           NO CLOUD CHAT
         </div>
       </motion.section>
@@ -1231,11 +2088,15 @@ export default function ChatWindow({
         <div className="nova-chat-shell-top">
           <div className="nova-chat-session-info">
             <div className="nova-chat-session-icon">
-              <MessageSquare size={15} />
+              <MessageSquare
+                size={15}
+              />
             </div>
 
             <div>
-              <small>CONVERSATION</small>
+              <small>
+                CONVERSATION
+              </small>
 
               <strong>
                 {conversationId
@@ -1248,9 +2109,14 @@ export default function ChatWindow({
           <button
             type="button"
             className="nova-chat-clear-button"
-            onClick={handleNewConversation}
+            onClick={
+              handleNewConversation
+            }
           >
-            <RotateCcw size={13} />
+            <RotateCcw
+              size={13}
+            />
+
             NEW CHAT
           </button>
         </div>
@@ -1265,259 +2131,390 @@ export default function ChatWindow({
                 LOADING CONVERSATION...
               </div>
             ) : (
-              messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  className={`nova-chat-message ${
-                    message.role === "user"
-                      ? "is-user"
-                      : "is-assistant"
-                  }`}
-                  initial={{
-                    opacity: 0,
-                    y: 16,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                  }}
-                  transition={{
-                    duration: 0.3,
-                    ease: "easeOut",
-                  }}
-                >
-                  <div className="nova-chat-message-top">
-                    <div className="nova-chat-message-author">
-                      <span className="nova-chat-avatar">
-                        {message.role === "user"
-                          ? "U"
-                          : "N"}
-                      </span>
+              messages.map(
+                (message) => (
+                  <motion.div
+                    key={message.id}
+                    className={`nova-chat-message ${
+                      message.role ===
+                      "user"
+                        ? "is-user"
+                        : "is-assistant"
+                    }`}
+                    initial={{
+                      opacity: 0,
+                      y: 16,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                    }}
+                    transition={{
+                      duration: 0.3,
+                      ease: "easeOut",
+                    }}
+                  >
+                    <div className="nova-chat-message-top">
+                      <div className="nova-chat-message-author">
+                        <span className="nova-chat-avatar">
+                          {message.role ===
+                          "user"
+                            ? "U"
+                            : "N"}
+                        </span>
 
-                      <span>
-                        {message.role === "user"
-                          ? "YOU"
-                          : "NOVA"}
-                      </span>
-                    </div>
-
-                    <time>
-                      {formatTime(message.time)}
-                    </time>
-                  </div>
-
-                  {message.attachments?.length >
-                    0 && (
-                    <div className="nova-chat-message-files">
-                      {message.attachments.map(
-                        (file) => (
-                          <div
-                            className="nova-chat-message-file"
-                            key={`${file.name}-${
-                              file.file_id ||
-                              file.size
-                            }`}
-                          >
-                            {getFileIcon(
-                              file.type
-                            )}
-
-                            <span>
-                              {file.name}
-                            </span>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-
-                  <div className="nova-chat-message-content">
-                    {message.role === "assistant" ? (
-                      <NovaMarkdown
-                        content={
-                          message.content
-                        }
-                      />
-                    ) : (
-                      message.content
-                    )}
-                  </div>
-
-                  {/* =================================================
-                      AGENT EXECUTION DETAILS
-                  ================================================== */}
-
-                  {message.agent?.plan && (
-                    <div className="nova-agent-panel">
-                      <div className="nova-agent-panel-header">
-                        <div>
-                          <BrainCircuit size={14} />
-
-                          <span>
-                            AGENT EXECUTION
-                          </span>
-                        </div>
-
-                        <span
-                          className={`nova-agent-status status-${
-                            message.agent.plan
-                              .status ||
-                            "unknown"
-                          }`}
-                        >
-                          {message.agent.plan
-                            .status ||
-                            "UNKNOWN"}
+                        <span>
+                          {message.role ===
+                          "user"
+                            ? "YOU"
+                            : "NOVA"}
                         </span>
                       </div>
 
-                      {message.agent.plan
-                        .steps?.length >
-                        0 && (
-                        <div className="nova-agent-steps">
-                          {message.agent.plan.steps.map(
-                            (step) => (
-                              <div
-                                className="nova-agent-step"
-                                key={step.id}
-                              >
-                                <span className="nova-agent-step-icon">
-                                  {getStepStatusIcon(
-                                    step.status
-                                  )}
-                                </span>
+                      <time>
+                        {formatTime(
+                          message.time
+                        )}
+                      </time>
+                    </div>
 
-                                <div className="nova-agent-step-info">
-                                  <strong>
-                                    {step.title}
-                                  </strong>
+                    {message.attachments?.length >
+                      0 && (
+                      <div className="nova-chat-message-files">
+                        {message.attachments.map(
+                          (
+                            file
+                          ) => (
+                            <div
+                              className="nova-chat-message-file"
+                              key={`${file.name}-${file.file_id || file.size}`}
+                            >
+                              {getFileIcon(
+                                file.type
+                              )}
 
-                                  <small>
-                                    {step.tool}
-                                  </small>
-                                </div>
+                              <span>
+                                {
+                                  file.name
+                                }
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
 
-                                <span
-                                  className={`nova-agent-step-status status-${step.status}`}
-                                >
-                                  {step.status}
-                                </span>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      )}
-
-                      {message.agent.execution && (
-                        <div className="nova-agent-execution-summary">
-                          <span>
-                            COMPLETED{" "}
-                            {
-                              message.agent
-                                .execution
-                                .completed_steps
-                                ?.length
-                            }
-                          </span>
-
-                          <span>
-                            FAILED{" "}
-                            {
-                              message.agent
-                                .execution
-                                .failed_steps
-                                ?.length
-                            }
-                          </span>
-
-                          <span>
-                            BLOCKED{" "}
-                            {
-                              message.agent
-                                .execution
-                                .blocked_steps
-                                ?.length
-                            }
-                          </span>
-                        </div>
-                      )}
-
-                      {/* =================================================
-                          GENERATED ARTIFACTS
-                      ================================================== */}
-
-                      {message.agent.artifacts?.length >
-                        0 && (
-                        <div className="nova-agent-artifacts">
-                          <div className="nova-agent-artifacts-header">
-                            <span>
-                              GENERATED ARTIFACTS
-                            </span>
-
-                            <small>
-                              LOCAL WORKSPACE
-                            </small>
-                          </div>
-
-                          <div className="nova-agent-artifact-list">
-                            {message.agent.artifacts.map(
-                              (artifact) => (
-                                <div
-                                  className="nova-agent-artifact"
-                                  key={`${artifact.stepId}-${artifact.filePath}`}
-                                >
-                                  <div className="nova-agent-artifact-icon">
-                                    <FileText
-                                      size={15}
-                                    />
-                                  </div>
-
-                                  <div className="nova-agent-artifact-info">
-                                    <strong>
-                                      {artifact.fileName}
-                                    </strong>
-
-                                    <small>
-                                      {artifact.extension}
-
-                                      {artifact.sizeBytes
-                                        ? ` · ${formatArtifactSize(
-                                            artifact.sizeBytes
-                                          )}`
-                                        : ""}
-                                    </small>
-                                  </div>
-
-                                  {artifact.downloadUrl && (
-                                    <a
-                                      className="nova-agent-artifact-download"
-                                      href={
-                                        artifact.downloadUrl
-                                      }
-                                      download={
-                                        artifact.fileName
-                                      }
-                                      title={`Download ${artifact.fileName}`}
-                                    >
-                                      <Download
-                                        size={14}
-                                      />
-
-                                      <span>
-                                        DOWNLOAD
-                                      </span>
-                                    </a>
-                                  )}
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </div>
+                    <div className="nova-chat-message-content">
+                      {message.role ===
+                      "assistant" ? (
+                        <NovaMarkdown
+                          content={
+                            message.content
+                          }
+                        />
+                      ) : (
+                        message.content
                       )}
                     </div>
-                  )}
-                </motion.div>
-              ))
+
+                    {/* =================================================
+                        PREMIUM NOVA AGENT WORKFLOW
+                    ================================================== */}
+
+                    {message.agent?.plan && (
+                      <motion.div
+                        className="nova-workflow-panel"
+                        initial={{
+                          opacity: 0,
+                          y: 6,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
+                        transition={{
+                          duration: 0.3,
+                          ease: "easeOut",
+                        }}
+                      >
+                        <div className="nova-workflow-header">
+                          <div className="nova-workflow-header-title">
+                            <BrainCircuit
+                              size={14}
+                              className="nova-workflow-icon"
+                            />
+
+                            <span>
+                              NOVA WORKFLOW
+                            </span>
+                          </div>
+
+                          <span
+                            className={`nova-workflow-status-badge status-${(
+                              message.agent.plan.status ||
+                              "completed"
+                            ).toLowerCase()}`}
+                          >
+                            <span className="nova-workflow-status-dot" />
+
+                            <span>
+                              {(
+                                message.agent
+                                  .plan
+                                  .status ||
+                                "COMPLETED"
+                              ).toUpperCase()}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="nova-workflow-meta">
+                          <h4 className="nova-workflow-name">
+                            {getWorkflowTitle(
+                              message.agent
+                                .plan,
+                              message.agent
+                                .execution,
+                              message.agent
+                                .artifacts
+                            )}
+                          </h4>
+
+                          <p className="nova-workflow-subtitle">
+                            {getWorkflowSubtitle(
+                              message.agent
+                                .plan
+                                .status
+                            )}
+                          </p>
+                        </div>
+
+                        {message.agent
+                          .plan
+                          .steps?.length >
+                          0 && (
+                          <div className="nova-workflow-steps">
+                            {message.agent.plan.steps.map(
+                              (
+                                step,
+                                idx
+                              ) => {
+                                const stepNum =
+                                  String(
+                                    idx + 1
+                                  ).padStart(
+                                    2,
+                                    "0"
+                                  );
+
+                                const stepStatus =
+                                  (
+                                    step.status ||
+                                    "completed"
+                                  ).toLowerCase();
+
+                                return (
+                                  <motion.div
+                                    className="nova-workflow-step"
+                                    key={
+                                      step.id ||
+                                      idx
+                                    }
+                                    initial={{
+                                      opacity: 0,
+                                      x: -5,
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      x: 0,
+                                    }}
+                                    transition={{
+                                      duration: 0.25,
+                                      delay:
+                                        idx *
+                                        0.05,
+                                    }}
+                                  >
+                                    <span className="nova-workflow-step-num">
+                                      {
+                                        stepNum
+                                      }
+                                    </span>
+
+                                    <span
+                                      className={`nova-workflow-step-icon status-${stepStatus}`}
+                                    >
+                                      {getStepStatusIcon(
+                                        stepStatus
+                                      )}
+                                    </span>
+
+                                    <div className="nova-workflow-step-info">
+                                      <span className="nova-workflow-step-title">
+                                        {
+                                          step.title
+                                        }
+                                      </span>
+
+                                      {step.tool && (
+                                        <span className="nova-workflow-step-tool">
+                                          {
+                                            step.tool
+                                          }
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <span
+                                      className={`nova-workflow-step-status status-${stepStatus}`}
+                                    >
+                                      {(
+                                        step.status ||
+                                        "COMPLETED"
+                                      ).toUpperCase()}
+                                    </span>
+                                  </motion.div>
+                                );
+                              }
+                            )}
+                          </div>
+                        )}
+
+                        {message.agent
+                          .execution && (
+                          <div className="nova-workflow-metrics">
+                            <div className="nova-workflow-metric-card metric-completed">
+                              <span className="nova-workflow-metric-val">
+                                {message
+                                  .agent
+                                  .execution
+                                  .completed_steps
+                                  ?.length ??
+                                  0}
+                              </span>
+
+                              <span className="nova-workflow-metric-lbl">
+                                COMPLETED
+                              </span>
+                            </div>
+
+                            <div className="nova-workflow-metric-card metric-failed">
+                              <span className="nova-workflow-metric-val">
+                                {message
+                                  .agent
+                                  .execution
+                                  .failed_steps
+                                  ?.length ??
+                                  0}
+                              </span>
+
+                              <span className="nova-workflow-metric-lbl">
+                                FAILED
+                              </span>
+                            </div>
+
+                            <div className="nova-workflow-metric-card metric-blocked">
+                              <span className="nova-workflow-metric-val">
+                                {message
+                                  .agent
+                                  .execution
+                                  .blocked_steps
+                                  ?.length ??
+                                  0}
+                              </span>
+
+                              <span className="nova-workflow-metric-lbl">
+                                BLOCKED
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* =================================================
+                            GENERATED ARTIFACTS
+                        ================================================== */}
+
+                        {message.agent.artifacts?.length >
+                          0 && (
+                          <div className="nova-agent-artifacts">
+                            <div className="nova-agent-artifacts-header">
+                              <span>
+                                GENERATED ARTIFACTS
+                              </span>
+
+                              <small>
+                                LOCAL WORKSPACE
+                              </small>
+                            </div>
+
+                            <div className="nova-agent-artifact-list">
+                              {message.agent.artifacts.map(
+                                (
+                                  artifact
+                                ) => (
+                                  <div
+                                    className="nova-agent-artifact"
+                                    key={`${artifact.stepId}-${artifact.filePath}`}
+                                  >
+                                    <div className="nova-agent-artifact-icon">
+                                      <FileText
+                                        size={15}
+                                      />
+                                    </div>
+
+                                    <div className="nova-agent-artifact-info">
+                                      <strong>
+                                        {
+                                          artifact.fileName
+                                        }
+                                      </strong>
+
+                                      <small>
+                                        {
+                                          artifact.extension
+                                        }
+
+                                        {artifact.sizeBytes
+                                          ? ` · ${formatArtifactSize(
+                                              artifact.sizeBytes
+                                            )}`
+                                          : ""}
+                                      </small>
+                                    </div>
+
+                                    {artifact.downloadUrl && (
+                                      <a
+                                        className="nova-agent-artifact-download"
+                                        href={
+                                          artifact.downloadUrl
+                                        }
+                                        download={
+                                          artifact.fileName
+                                        }
+                                        title={`Download ${artifact.fileName}`}
+                                      >
+                                        <Download
+                                          size={
+                                            14
+                                          }
+                                        />
+
+                                        <span>
+                                          DOWNLOAD
+                                        </span>
+                                      </a>
+                                    )}
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </motion.div>
+                )
+              )
             )}
 
             {isSending && (
@@ -1541,7 +2538,8 @@ export default function ChatWindow({
                 <strong>
                   {status === "PLANNING"
                     ? "NOVA IS PLANNING..."
-                    : status === "EXECUTING"
+                    : status ===
+                        "EXECUTING"
                       ? "NOVA IS EXECUTING..."
                       : "NOVA IS THINKING..."}
                 </strong>
@@ -1563,11 +2561,17 @@ export default function ChatWindow({
                   NOVA RUNTIME ERROR
                 </strong>
 
-                <span>{error}</span>
+                <span>
+                  {error}
+                </span>
               </div>
             )}
 
-            <div ref={messagesEndRef} />
+            <div
+              ref={
+                messagesEndRef
+              }
+            />
           </div>
         </div>
 
@@ -1579,7 +2583,10 @@ export default function ChatWindow({
           <div className="nova-chat-composer-header">
             <div>
               <span className="composer-indicator" />
-              <span>LOCAL REQUEST</span>
+
+              <span>
+                LOCAL REQUEST
+              </span>
             </div>
 
             <span>
@@ -1587,45 +2594,56 @@ export default function ChatWindow({
             </span>
           </div>
 
-          {selectedFiles.length > 0 && (
+          {selectedFiles.length >
+            0 && (
             <div className="nova-chat-attachments">
-              {selectedFiles.map((file) => (
-                <div
-                  className="nova-chat-attachment"
-                  key={`${file.name}-${file.size}`}
-                >
-                  <span className="nova-chat-attachment-icon">
-                    {getFileIcon(
-                      file.type
-                    )}
-                  </span>
-
-                  <div className="nova-chat-attachment-info">
-                    <strong>
-                      {file.name}
-                    </strong>
-
-                    <small>
-                      {(
-                        file.size /
-                        1024 /
-                        1024
-                      ).toFixed(2)}{" "}
-                      MB
-                    </small>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      removeFile(file)
-                    }
-                    aria-label={`Remove ${file.name}`}
+              {selectedFiles.map(
+                (file) => (
+                  <div
+                    className="nova-chat-attachment"
+                    key={`${file.name}-${file.size}`}
                   >
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
+                    <span className="nova-chat-attachment-icon">
+                      {getFileIcon(
+                        file.type
+                      )}
+                    </span>
+
+                    <div className="nova-chat-attachment-info">
+                      <strong>
+                        {
+                          file.name
+                        }
+                      </strong>
+
+                      <small>
+                        {(
+                          file.size /
+                          1024 /
+                          1024
+                        ).toFixed(
+                          2
+                        )}{" "}
+                        MB
+                      </small>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removeFile(
+                          file
+                        )
+                      }
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X
+                        size={13}
+                      />
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           )}
 
@@ -1636,25 +2654,33 @@ export default function ChatWindow({
               onClick={() =>
                 fileInputRef.current?.click()
               }
-              disabled={isSending}
+              disabled={
+                isSending
+              }
               title="Attach file"
             >
-              <Paperclip size={17} />
+              <Paperclip
+                size={17}
+              />
             </button>
 
             <input
-              ref={fileInputRef}
+              ref={
+                fileInputRef
+              }
               type="file"
               hidden
               multiple
-              accept=".pdf,.txt,.docx,image/png,image/jpeg,image/webp"
+              accept=".pdf,.txt,.docx,.csv,.xlsx,image/png,image/jpeg,image/webp"
               onChange={
                 handleFileSelection
               }
             />
 
             <textarea
-              ref={textareaRef}
+              ref={
+                textareaRef
+              }
               className="nova-chat-composer-input"
               value={input}
               onChange={
@@ -1674,7 +2700,9 @@ export default function ChatWindow({
             <button
               type="button"
               className="nova-chat-send"
-              onClick={sendMessage}
+              onClick={
+                sendMessage
+              }
               disabled={
                 isSending ||
                 isLoadingConversation ||
@@ -1689,7 +2717,9 @@ export default function ChatWindow({
                   className="nova-spin"
                 />
               ) : (
-                <ArrowUp size={18} />
+                <ArrowUp
+                  size={18}
+                />
               )}
             </button>
           </div>
@@ -1709,6 +2739,7 @@ export default function ChatWindow({
 
       <div className="nova-chat-footer-signal">
         <span />
+
         NOVA INTELLIGENCE RUNTIME
       </div>
     </div>
