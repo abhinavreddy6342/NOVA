@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import {
   ArrowUp,
   Cpu,
@@ -12,8 +13,14 @@ import {
   Image as ImageIcon,
   X,
   LoaderCircle,
+  BrainCircuit,
+  CheckCircle2,
+  AlertCircle,
+  Download,
 } from "lucide-react";
+
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 
 const API_URL = "http://127.0.0.1:8001";
 const MODEL = "llama3.2:latest";
@@ -24,6 +31,7 @@ const welcomeMessage = {
   content: "Hi! I'm NOVA. How can I help you today?",
   time: new Date(),
   attachments: [],
+  agent: null,
 };
 
 function formatTime(date) {
@@ -61,7 +69,414 @@ function mapHistoryMessage(message) {
         file_id: attachment.file_id,
       })
     ),
+    agent: null,
   };
+}
+
+/*
+ * Sends the current NOVA state to the 3D runtime.
+ */
+function emitAvatarState(state, audioLevel = 0) {
+  window.dispatchEvent(
+    new CustomEvent("nova:avatar-state", {
+      detail: {
+        state,
+        audioLevel,
+        timestamp: Date.now(),
+      },
+    })
+  );
+}
+
+/*
+ * Decide whether the user is asking for an agentic workflow.
+ *
+ * Normal conversation remains on /api/chat/.
+ * Explicit local knowledge / planning / execution / artifact
+ * generation requests use /api/agents/run.
+ */
+function isAgentRequest(message) {
+  const text = message.toLowerCase().trim();
+
+  const agentSignals = [
+    // Knowledge / retrieval
+    "local knowledge",
+    "knowledge base",
+    "knowledge vault",
+    "search my documents",
+    "search the documents",
+    "search documents",
+    "find in my documents",
+    "find in the knowledge",
+    "look up in my documents",
+    "retrieve from",
+    "search the local",
+
+    // File/document understanding
+    "analyze the document",
+    "analyse the document",
+    "analyze the file",
+    "analyse the file",
+
+    // Planning / agentic execution
+    "create a plan",
+    "make a plan",
+    "plan this task",
+    "execute this",
+    "execute the task",
+    "perform this task",
+    "run this task",
+    "agent",
+    "mission",
+    "workflow",
+    "investigate",
+    "root cause",
+
+    // Explicit DOCX / Word generation
+    "create a docx",
+    "create docx",
+    "generate a docx",
+    "generate docx",
+    "write a docx",
+    "write docx",
+    "make a docx",
+    "create a word document",
+    "create word document",
+    "generate a word document",
+    "generate word document",
+    "write a word document",
+    "write word document",
+    "create a word file",
+    "create word file",
+    "generate a word file",
+    "generate word file",
+    "make a word document",
+    ".docx",
+
+    // PDF
+    "create a pdf",
+    "generate a pdf",
+    "write a pdf",
+    ".pdf",
+
+    // Excel
+    "create an excel",
+    "create excel",
+    "generate an excel",
+    "generate excel",
+    ".xlsx",
+
+    // PowerPoint
+    "create a powerpoint",
+    "create powerpoint",
+    "generate a powerpoint",
+    "generate powerpoint",
+    ".pptx",
+
+    // Plain file generation
+    "create a file",
+    "create file",
+    "generate a file",
+    "generate file",
+    "write a file",
+    "write file",
+    "save this to",
+    "save it to",
+  ];
+
+  /*
+   * Natural-language document generation.
+   *
+   * Examples:
+   * Create a document about cybersecurity
+   * Create a 5-page professional report on NOVA
+   * Generate a technical report on NOVA
+   * Prepare a project proposal for NOVA
+   * Draft a formal letter about ...
+   * Write meeting notes for ...
+   */
+  const naturalDocumentPattern =
+    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
+
+  return (
+    agentSignals.some((signal) =>
+      text.includes(signal)
+    ) ||
+    naturalDocumentPattern.test(text)
+  );
+}
+
+/*
+ * Decide whether the request specifically requires
+ * automatic document artifact generation.
+ *
+ * This is intentionally broader than checking for ".docx".
+ */
+function isDocumentGenerationRequest(message) {
+  const text = message.toLowerCase().trim();
+
+  const explicitDocumentSignals = [
+    "create a docx",
+    "create docx",
+    "generate a docx",
+    "generate docx",
+    "write a docx",
+    "write docx",
+    "make a docx",
+    "create a word document",
+    "create word document",
+    "generate a word document",
+    "generate word document",
+    "write a word document",
+    "write word document",
+    "create a word file",
+    "create word file",
+    "generate a word file",
+    "generate word file",
+    "make a word document",
+    ".docx",
+  ];
+
+  const naturalDocumentPattern =
+    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
+
+  return (
+    explicitDocumentSignals.some((signal) =>
+      text.includes(signal)
+    ) ||
+    naturalDocumentPattern.test(text)
+  );
+}
+
+function getStepStatusIcon(status) {
+  if (status === "completed") {
+    return <CheckCircle2 size={13} />;
+  }
+
+  if (status === "failed") {
+    return <AlertCircle size={13} />;
+  }
+
+  return <Activity size={13} />;
+}
+
+/*
+ * Convert a NOVA workspace-relative file path into
+ * the backend download endpoint.
+ */
+function getDownloadUrl(filePath) {
+  if (!filePath) {
+    return null;
+  }
+
+  const normalizedPath = String(filePath)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+
+  if (!normalizedPath) {
+    return null;
+  }
+
+  const pathParts = normalizedPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part));
+
+  return `${API_URL}/api/chat/download/${pathParts.join("/")}`;
+}
+
+/*
+ * Extract generated artifacts from the agent execution context.
+ */
+function getAgentArtifacts(execution) {
+  if (!execution?.context) {
+    return [];
+  }
+
+  const artifacts = [];
+
+  Object.entries(execution.context).forEach(
+    ([stepId, result]) => {
+      if (
+        !result ||
+        typeof result !== "object" ||
+        !result.file_path
+      ) {
+        return;
+      }
+
+      const filePath = String(
+        result.file_path
+      ).replace(/\\/g, "/");
+
+      const fileName =
+        result.file_name ||
+        filePath.split("/").pop() ||
+        `artifact-${stepId}`;
+
+      const extension =
+        result.extension ||
+        `.${fileName.split(".").pop()}`;
+
+      artifacts.push({
+        stepId,
+        filePath,
+        fileName,
+        extension,
+        sizeBytes:
+          typeof result.size_bytes === "number"
+            ? result.size_bytes
+            : null,
+        downloadUrl: getDownloadUrl(filePath),
+      });
+    }
+  );
+
+  return artifacts;
+}
+
+function formatArtifactSize(sizeBytes) {
+  if (
+    typeof sizeBytes !== "number" ||
+    sizeBytes <= 0
+  ) {
+    return "";
+  }
+
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(
+    sizeBytes /
+    (1024 * 1024)
+  ).toFixed(2)} MB`;
+}
+
+/*
+ * Render NOVA Markdown responses as proper rich content.
+ *
+ * Markdown is rendered only for assistant messages.
+ * User messages remain plain text.
+ */
+function NovaMarkdown({ content }) {
+  return (
+    <div className="nova-markdown">
+      <ReactMarkdown
+        components={{
+          h1: ({ children }) => (
+            <h1>{children}</h1>
+          ),
+
+          h2: ({ children }) => (
+            <h2>{children}</h2>
+          ),
+
+          h3: ({ children }) => (
+            <h3>{children}</h3>
+          ),
+
+          h4: ({ children }) => (
+            <h4>{children}</h4>
+          ),
+
+          p: ({ children }) => (
+            <p>{children}</p>
+          ),
+
+          strong: ({ children }) => (
+            <strong>{children}</strong>
+          ),
+
+          em: ({ children }) => (
+            <em>{children}</em>
+          ),
+
+          ul: ({ children }) => (
+            <ul>{children}</ul>
+          ),
+
+          ol: ({ children }) => (
+            <ol>{children}</ol>
+          ),
+
+          li: ({ children }) => (
+            <li>{children}</li>
+          ),
+
+          blockquote: ({ children }) => (
+            <blockquote>{children}</blockquote>
+          ),
+
+          hr: () => <hr />,
+
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {children}
+            </a>
+          ),
+
+          code: ({
+            inline,
+            className,
+            children,
+          }) => {
+            if (inline) {
+              return (
+                <code className={className}>
+                  {children}
+                </code>
+              );
+            }
+
+            return (
+              <pre className="nova-markdown-code-block">
+                <code className={className}>
+                  {children}
+                </code>
+              </pre>
+            );
+          },
+
+          table: ({ children }) => (
+            <div className="nova-markdown-table-wrap">
+              <table>{children}</table>
+            </div>
+          ),
+
+          thead: ({ children }) => (
+            <thead>{children}</thead>
+          ),
+
+          tbody: ({ children }) => (
+            <tbody>{children}</tbody>
+          ),
+
+          tr: ({ children }) => (
+            <tr>{children}</tr>
+          ),
+
+          th: ({ children }) => (
+            <th>{children}</th>
+          ),
+
+          td: ({ children }) => (
+            <td>{children}</td>
+          ),
+        }}
+      >
+        {content || ""}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function ChatWindow({
@@ -85,6 +500,15 @@ export default function ChatWindow({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const idleTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,11 +518,16 @@ export default function ChatWindow({
         setMessages([welcomeMessage]);
         setStatus("IDLE");
         setError("");
+
+        emitAvatarState("idle");
+
         return;
       }
 
       setIsLoadingConversation(true);
       setError("");
+
+      emitAvatarState("idle");
 
       try {
         const response = await fetch(
@@ -124,6 +553,7 @@ export default function ChatWindow({
         );
 
         setStatus("IDLE");
+        emitAvatarState("idle");
       } catch (requestError) {
         if (cancelled) {
           return;
@@ -140,6 +570,7 @@ export default function ChatWindow({
         );
 
         setMessages([welcomeMessage]);
+        emitAvatarState("idle");
       } finally {
         if (!cancelled) {
           setIsLoadingConversation(false);
@@ -173,6 +604,7 @@ export default function ChatWindow({
     }
 
     textarea.style.height = "auto";
+
     textarea.style.height = `${Math.min(
       textarea.scrollHeight,
       180
@@ -181,6 +613,7 @@ export default function ChatWindow({
 
   const handleInputChange = (event) => {
     setInput(event.target.value);
+
     requestAnimationFrame(autoResize);
   };
 
@@ -295,6 +728,85 @@ export default function ChatWindow({
     return uploaded;
   };
 
+  /*
+   * Run NOVA's agent endpoint.
+   *
+   * Document generation is automatically confirmed
+   * because the user explicitly requested creation
+   * of an artifact.
+   */
+  const runAgent = async (message) => {
+    const directDocumentGeneration =
+      isDocumentGenerationRequest(message);
+
+    const response = await fetch(
+      `${API_URL}/api/agents/run`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          objective: message,
+          context: {
+            conversation_id:
+              conversationId || null,
+            source: "nova-local-chat",
+          },
+          auto_confirm:
+            directDocumentGeneration,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.detail ||
+          "NOVA agent could not process the request."
+      );
+    }
+
+    return data;
+  };
+
+  /*
+   * Run the existing normal chat endpoint.
+   */
+  const runNormalChat = async (
+    message,
+    uploadedFiles
+  ) => {
+    const response = await fetch(
+      `${API_URL}/api/chat/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message,
+          model: MODEL,
+          conversation_id:
+            conversationId || null,
+          attachments: uploadedFiles,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      throw new Error(
+        errorText ||
+          "NOVA could not process the request."
+      );
+    }
+
+    return response.json();
+  };
+
   const sendMessage = async () => {
     const message = input.trim();
 
@@ -307,6 +819,25 @@ export default function ChatWindow({
 
     setError("");
     setIsSending(true);
+
+    /*
+     * Attachments continue through normal chat because
+     * the current Agent API does not yet accept uploaded
+     * attachment references.
+     */
+    const useAgent =
+      !selectedFiles.length &&
+      isAgentRequest(message);
+
+    const initialStatus = selectedFiles.length
+      ? "ANALYZING"
+      : useAgent
+        ? "PLANNING"
+        : "THINKING";
+
+    setStatus(initialStatus);
+
+    emitAvatarState("thinking");
 
     const attachedFileMetadata =
       selectedFiles.map((file) => ({
@@ -323,6 +854,7 @@ export default function ChatWindow({
         "Please analyze the attached file.",
       time: new Date(),
       attachments: attachedFileMetadata,
+      agent: null,
     };
 
     setMessages((current) => [
@@ -332,12 +864,6 @@ export default function ChatWindow({
 
     setInput("");
 
-    setStatus(
-      selectedFiles.length
-        ? "ANALYZING"
-        : "THINKING"
-    );
-
     requestAnimationFrame(() => {
       if (textareaRef.current) {
         textareaRef.current.style.height =
@@ -346,50 +872,131 @@ export default function ChatWindow({
     });
 
     try {
+      /*
+       * =============================================================
+       * AGENTIC PIPELINE
+       * =============================================================
+       */
+
+      if (useAgent) {
+        setStatus("PLANNING");
+
+        const agentData =
+          await runAgent(message);
+
+        setStatus("EXECUTING");
+
+        const assistantText =
+          agentData.response ||
+          "NOVA completed the agent workflow.";
+
+        const assistantMessage = {
+          id: createId("nova"),
+          role: "assistant",
+          content: assistantText,
+          time: new Date(),
+          attachments: [],
+          agent: {
+            plan: agentData.plan || null,
+            execution:
+              agentData.execution || null,
+            artifacts: getAgentArtifacts(
+              agentData.execution
+            ),
+          },
+        };
+
+        setMessages((current) => [
+          ...current,
+          assistantMessage,
+        ]);
+
+        window.dispatchEvent(
+          new CustomEvent("nova:speak", {
+            detail: {
+              text: assistantText,
+            },
+          })
+        );
+
+        setStatus("RESPONDING");
+
+        emitAvatarState(
+          "speaking",
+          0.7
+        );
+
+        if (
+          agentData.plan?.status ===
+          "failed"
+        ) {
+          setStatus("ERROR");
+        }
+
+        if (idleTimerRef.current) {
+          window.clearTimeout(
+            idleTimerRef.current
+          );
+        }
+
+        idleTimerRef.current =
+          window.setTimeout(() => {
+            setStatus("IDLE");
+
+            emitAvatarState(
+              "idle",
+              0
+            );
+          }, 900);
+
+        return;
+      }
+
+      /*
+       * =============================================================
+       * NORMAL CHAT PIPELINE
+       * =============================================================
+       */
+
       const uploadedFiles =
         await uploadSelectedFiles();
 
-      const response = await fetch(
-        `${API_URL}/api/chat/`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message:
-              message ||
-              "Analyze the attached file.",
-            model: MODEL,
-            conversation_id:
-              conversationId || null,
-            attachments: uploadedFiles,
-          }),
-        }
-      );
+      emitAvatarState("thinking");
 
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        throw new Error(
-          errorText ||
-            "NOVA could not process the request."
+      const data =
+        await runNormalChat(
+          message ||
+            "Analyze the attached file.",
+          uploadedFiles
         );
-      }
 
       setStatus("RESPONDING");
 
-      const data = await response.json();
+      emitAvatarState(
+        "speaking",
+        0.7
+      );
+
+      const responseText =
+        data.response ||
+        "NOVA did not return a response.";
 
       const assistantMessage = {
         id: createId("nova"),
         role: "assistant",
-        content:
-          data.response ||
-          "NOVA did not return a response.",
+        content: responseText,
         time: new Date(),
         attachments: [],
+        agent: null,
       };
+
+      window.dispatchEvent(
+        new CustomEvent("nova:speak", {
+          detail: {
+            text: responseText,
+          },
+        })
+      );
 
       setMessages((current) => [
         ...current,
@@ -398,10 +1005,6 @@ export default function ChatWindow({
 
       setSelectedFiles([]);
 
-      /*
-       * The backend creates a conversation when
-       * conversation_id is null.
-       */
       if (
         data.conversation_id &&
         data.conversation_id !== conversationId
@@ -415,12 +1018,24 @@ export default function ChatWindow({
 
       setStatus("COMPLETE");
 
-      window.setTimeout(() => {
-        setStatus("IDLE");
-      }, 700);
+      if (idleTimerRef.current) {
+        window.clearTimeout(
+          idleTimerRef.current
+        );
+      }
+
+      idleTimerRef.current =
+        window.setTimeout(() => {
+          setStatus("IDLE");
+
+          emitAvatarState(
+            "idle",
+            0
+          );
+        }, 900);
     } catch (requestError) {
       console.error(
-        "NOVA chat error:",
+        "NOVA request error:",
         requestError
       );
 
@@ -431,10 +1046,10 @@ export default function ChatWindow({
 
       setStatus("ERROR");
 
-      /*
-       * Don't remove the user's message from the UI here.
-       * The user can see the failed request.
-       */
+      emitAvatarState(
+        "idle",
+        0
+      );
     } finally {
       setIsSending(false);
     }
@@ -446,6 +1061,7 @@ export default function ChatWindow({
       !event.shiftKey
     ) {
       event.preventDefault();
+
       sendMessage();
     }
   };
@@ -456,11 +1072,20 @@ export default function ChatWindow({
     setError("");
     setStatus("IDLE");
 
+    emitAvatarState(
+      "idle",
+      0
+    );
+
     onNewConversation();
   };
 
   return (
     <div className="nova-chat-page">
+      {/* =========================================================
+          HERO
+      ========================================================== */}
+
       <motion.section
         className="nova-chat-hero"
         initial={{
@@ -484,7 +1109,8 @@ export default function ChatWindow({
 
           <div className="nova-chat-title-row">
             <h1>
-              NOVA<span> LOCAL CHAT</span>
+              NOVA
+              <span>LOCAL CHAT</span>
             </h1>
 
             <div className="nova-chat-live-badge">
@@ -512,6 +1138,10 @@ export default function ChatWindow({
           </div>
         </div>
       </motion.section>
+
+      {/* =========================================================
+          RUNTIME STRIP
+      ========================================================== */}
 
       <motion.section
         className="nova-chat-command-strip"
@@ -556,6 +1186,15 @@ export default function ChatWindow({
         </div>
 
         <div className="nova-chat-command-item">
+          <BrainCircuit size={15} />
+
+          <div>
+            <small>AGENT</small>
+            <strong>READY</strong>
+          </div>
+        </div>
+
+        <div className="nova-chat-command-item">
           <Sparkles size={15} />
 
           <div>
@@ -569,6 +1208,10 @@ export default function ChatWindow({
           NO CLOUD CHAT
         </div>
       </motion.section>
+
+      {/* =========================================================
+          MAIN CHAT SHELL
+      ========================================================== */}
 
       <motion.section
         className="nova-chat-shell"
@@ -646,24 +1289,20 @@ export default function ChatWindow({
                   <div className="nova-chat-message-top">
                     <div className="nova-chat-message-author">
                       <span className="nova-chat-avatar">
-                        {message.role ===
-                        "user"
+                        {message.role === "user"
                           ? "U"
                           : "N"}
                       </span>
 
                       <span>
-                        {message.role ===
-                        "user"
+                        {message.role === "user"
                           ? "YOU"
                           : "NOVA"}
                       </span>
                     </div>
 
                     <time>
-                      {formatTime(
-                        message.time
-                      )}
+                      {formatTime(message.time)}
                     </time>
                   </div>
 
@@ -674,7 +1313,10 @@ export default function ChatWindow({
                         (file) => (
                           <div
                             className="nova-chat-message-file"
-                            key={`${file.name}-${file.file_id || file.size}`}
+                            key={`${file.name}-${
+                              file.file_id ||
+                              file.size
+                            }`}
                           >
                             {getFileIcon(
                               file.type
@@ -690,8 +1332,190 @@ export default function ChatWindow({
                   )}
 
                   <div className="nova-chat-message-content">
-                    {message.content}
+                    {message.role === "assistant" ? (
+                      <NovaMarkdown
+                        content={
+                          message.content
+                        }
+                      />
+                    ) : (
+                      message.content
+                    )}
                   </div>
+
+                  {/* =================================================
+                      AGENT EXECUTION DETAILS
+                  ================================================== */}
+
+                  {message.agent?.plan && (
+                    <div className="nova-agent-panel">
+                      <div className="nova-agent-panel-header">
+                        <div>
+                          <BrainCircuit size={14} />
+
+                          <span>
+                            AGENT EXECUTION
+                          </span>
+                        </div>
+
+                        <span
+                          className={`nova-agent-status status-${
+                            message.agent.plan
+                              .status ||
+                            "unknown"
+                          }`}
+                        >
+                          {message.agent.plan
+                            .status ||
+                            "UNKNOWN"}
+                        </span>
+                      </div>
+
+                      {message.agent.plan
+                        .steps?.length >
+                        0 && (
+                        <div className="nova-agent-steps">
+                          {message.agent.plan.steps.map(
+                            (step) => (
+                              <div
+                                className="nova-agent-step"
+                                key={step.id}
+                              >
+                                <span className="nova-agent-step-icon">
+                                  {getStepStatusIcon(
+                                    step.status
+                                  )}
+                                </span>
+
+                                <div className="nova-agent-step-info">
+                                  <strong>
+                                    {step.title}
+                                  </strong>
+
+                                  <small>
+                                    {step.tool}
+                                  </small>
+                                </div>
+
+                                <span
+                                  className={`nova-agent-step-status status-${step.status}`}
+                                >
+                                  {step.status}
+                                </span>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+
+                      {message.agent.execution && (
+                        <div className="nova-agent-execution-summary">
+                          <span>
+                            COMPLETED{" "}
+                            {
+                              message.agent
+                                .execution
+                                .completed_steps
+                                ?.length
+                            }
+                          </span>
+
+                          <span>
+                            FAILED{" "}
+                            {
+                              message.agent
+                                .execution
+                                .failed_steps
+                                ?.length
+                            }
+                          </span>
+
+                          <span>
+                            BLOCKED{" "}
+                            {
+                              message.agent
+                                .execution
+                                .blocked_steps
+                                ?.length
+                            }
+                          </span>
+                        </div>
+                      )}
+
+                      {/* =================================================
+                          GENERATED ARTIFACTS
+                      ================================================== */}
+
+                      {message.agent.artifacts?.length >
+                        0 && (
+                        <div className="nova-agent-artifacts">
+                          <div className="nova-agent-artifacts-header">
+                            <span>
+                              GENERATED ARTIFACTS
+                            </span>
+
+                            <small>
+                              LOCAL WORKSPACE
+                            </small>
+                          </div>
+
+                          <div className="nova-agent-artifact-list">
+                            {message.agent.artifacts.map(
+                              (artifact) => (
+                                <div
+                                  className="nova-agent-artifact"
+                                  key={`${artifact.stepId}-${artifact.filePath}`}
+                                >
+                                  <div className="nova-agent-artifact-icon">
+                                    <FileText
+                                      size={15}
+                                    />
+                                  </div>
+
+                                  <div className="nova-agent-artifact-info">
+                                    <strong>
+                                      {artifact.fileName}
+                                    </strong>
+
+                                    <small>
+                                      {artifact.extension}
+
+                                      {artifact.sizeBytes
+                                        ? ` · ${formatArtifactSize(
+                                            artifact.sizeBytes
+                                          )}`
+                                        : ""}
+                                    </small>
+                                  </div>
+
+                                  {artifact.downloadUrl && (
+                                    <a
+                                      className="nova-agent-artifact-download"
+                                      href={
+                                        artifact.downloadUrl
+                                      }
+                                      download={
+                                        artifact.fileName
+                                      }
+                                      title={`Download ${artifact.fileName}`}
+                                    >
+                                      <Download
+                                        size={14}
+                                      />
+
+                                      <span>
+                                        DOWNLOAD
+                                      </span>
+                                    </a>
+                                  )}
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               ))
             )}
@@ -715,7 +1539,11 @@ export default function ChatWindow({
                 <span className="nova-thinking-pulse" />
 
                 <strong>
-                  NOVA IS THINKING...
+                  {status === "PLANNING"
+                    ? "NOVA IS PLANNING..."
+                    : status === "EXECUTING"
+                      ? "NOVA IS EXECUTING..."
+                      : "NOVA IS THINKING..."}
                 </strong>
 
                 <span
@@ -743,6 +1571,10 @@ export default function ChatWindow({
           </div>
         </div>
 
+        {/* =======================================================
+            COMPOSER
+        ======================================================== */}
+
         <div className="nova-chat-composer">
           <div className="nova-chat-composer-header">
             <div>
@@ -751,8 +1583,7 @@ export default function ChatWindow({
             </div>
 
             <span>
-              ENTER TO SEND · SHIFT + ENTER
-              FOR NEW LINE
+              AGENT TASKS AUTO-ROUTED · ENTER TO SEND
             </span>
           </div>
 
@@ -764,7 +1595,9 @@ export default function ChatWindow({
                   key={`${file.name}-${file.size}`}
                 >
                   <span className="nova-chat-attachment-icon">
-                    {getFileIcon(file.type)}
+                    {getFileIcon(
+                      file.type
+                    )}
                   </span>
 
                   <div className="nova-chat-attachment-info">
@@ -814,22 +1647,22 @@ export default function ChatWindow({
               type="file"
               hidden
               multiple
-              accept="
-                .pdf,
-                .txt,
-                .docx,
-                image/png,
-                image/jpeg
-              "
-              onChange={handleFileSelection}
+              accept=".pdf,.txt,.docx,image/png,image/jpeg,image/webp"
+              onChange={
+                handleFileSelection
+              }
             />
 
             <textarea
               ref={textareaRef}
               className="nova-chat-composer-input"
               value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
+              onChange={
+                handleInputChange
+              }
+              onKeyDown={
+                handleKeyDown
+              }
               placeholder="Ask NOVA anything..."
               rows={1}
               disabled={
@@ -862,10 +1695,13 @@ export default function ChatWindow({
           </div>
 
           <div className="nova-chat-composer-footer">
-            <span>PRIVATE SESSION</span>
+            <span>
+              PRIVATE SESSION
+            </span>
 
             <span>
-              LOCAL MODEL / NO CLOUD TRANSMISSION
+              LOCAL MODEL / AGENT READY / NO CLOUD
+              TRANSMISSION
             </span>
           </div>
         </div>

@@ -14,6 +14,7 @@ import Topbar from "./components/layout/Topbar";
 import CommandCenter from "./components/dashboard/CommandCenter";
 import ChatWindow from "./components/chat/ChatWindow";
 import KnowledgeVault from "./components/knowledge/KnowledgeVault";
+import VoiceController from "./components/voice/VoiceController";
 
 const API_URL = "http://127.0.0.1:8001";
 
@@ -28,10 +29,11 @@ const pages = {
   analytics: "Analytics",
 };
 
-function PlaceholderPage({
-  page,
-  onBack,
-}) {
+/* =========================================================
+   PLACEHOLDER PAGE
+   ========================================================= */
+
+function PlaceholderPage({ page, onBack }) {
   return (
     <motion.div
       className="placeholder-page"
@@ -55,9 +57,7 @@ function PlaceholderPage({
         <Command size={28} />
       </div>
 
-      <span>
-        MODULE INITIALIZATION
-      </span>
+      <span>MODULE INITIALIZATION</span>
 
       <h1>{pages[page]}</h1>
 
@@ -72,12 +72,17 @@ function PlaceholderPage({
       <button
         className="placeholder-button"
         onClick={onBack}
+        type="button"
       >
         Return to Command Center
       </button>
     </motion.div>
   );
 }
+
+/* =========================================================
+   COMMAND PALETTE
+   ========================================================= */
 
 function CommandPalette({
   onClose,
@@ -130,6 +135,7 @@ function CommandPalette({
           <kbd>ESC</kbd>
 
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close command palette"
           >
@@ -138,25 +144,28 @@ function CommandPalette({
         </div>
 
         <div className="command-results">
-          {commands.map(
-            ([id, label]) => (
-              <button
-                key={id}
-                onClick={() => {
-                  onNavigate(id);
-                  onClose();
-                }}
-              >
-                <span>{label}</span>
-                <span>↵</span>
-              </button>
-            )
-          )}
+          {commands.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                onNavigate(id);
+                onClose();
+              }}
+            >
+              <span>{label}</span>
+              <span>↵</span>
+            </button>
+          ))}
         </div>
       </motion.div>
     </motion.div>
   );
 }
+
+/* =========================================================
+   APP
+   ========================================================= */
 
 function App() {
   const [activePage, setActivePage] =
@@ -187,8 +196,12 @@ function App() {
     setHistoryLoading,
   ] = useState(false);
 
-  const loadConversations = useCallback(
-    async () => {
+  /* =======================================================
+     LOAD CONVERSATIONS
+     ======================================================= */
+
+  const loadConversations =
+    useCallback(async () => {
       try {
         setHistoryLoading(true);
 
@@ -202,10 +215,18 @@ function App() {
           );
         }
 
-        const data = await response.json();
+        const data =
+          await response.json();
+
+        const savedConversations =
+          Array.isArray(
+            data?.conversations
+          )
+            ? data.conversations
+            : [];
 
         setConversations(
-          data.conversations || []
+          savedConversations
         );
       } catch (error) {
         console.error(
@@ -215,46 +236,103 @@ function App() {
       } finally {
         setHistoryLoading(false);
       }
-    },
-    []
-  );
+    }, []);
+
+  /* =======================================================
+     INITIAL HISTORY LOAD
+     ======================================================= */
 
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
+  /* =======================================================
+     NAVIGATION
+     ======================================================= */
+
   const navigate = (page) => {
     setActivePage(page);
     setMobileSidebar(false);
+
+    /*
+     * Command palette closes whenever a
+     * navigation action occurs.
+     */
+    setCommandOpen(false);
   };
+
+  /* =======================================================
+     NEW CONVERSATION
+     ======================================================= */
 
   const handleNewConversation = () => {
     setActiveConversationId(null);
     setActivePage("chat");
+    setMobileSidebar(false);
   };
+
+  /* =======================================================
+     SELECT SAVED CONVERSATION
+     ======================================================= */
 
   const handleSelectConversation = (
     conversationId
   ) => {
+    if (!conversationId) {
+      return;
+    }
+
     setActiveConversationId(
       conversationId
     );
+
+    /*
+     * This is important:
+     * selecting a saved conversation must
+     * always open the Local Chat page.
+     */
+    setActivePage("chat");
+    setMobileSidebar(false);
   };
+
+  /* =======================================================
+     CONVERSATION ID CREATED BY BACKEND
+     ======================================================= */
 
   const handleConversationChange = (
     conversationId
   ) => {
+    if (!conversationId) {
+      return;
+    }
+
     setActiveConversationId(
       conversationId
     );
+
+    /*
+     * When the backend creates the first
+     * conversation, immediately keep the user
+     * inside Local Chat.
+     */
+    setActivePage("chat");
   };
+
+  /* =======================================================
+     DELETE CONVERSATION
+     ======================================================= */
 
   const handleDeleteConversation =
     async (conversationId) => {
+      if (!conversationId) {
+        return;
+      }
+
       const conversation =
         conversations.find(
           (item) =>
-            item.id === conversationId
+            String(item.id) ===
+            String(conversationId)
         );
 
       const confirmed =
@@ -270,31 +348,52 @@ function App() {
       }
 
       try {
-        const response = await fetch(
-          `${API_URL}/api/history/conversations/${conversationId}`,
-          {
-            method: "DELETE",
-          }
-        );
+        const response =
+          await fetch(
+            `${API_URL}/api/history/conversations/${conversationId}`,
+            {
+              method: "DELETE",
+            }
+          );
 
         if (!response.ok) {
-          throw new Error(
-            "Conversation could not be deleted."
-          );
+          let message =
+            "Conversation could not be deleted.";
+
+          try {
+            const data =
+              await response.json();
+
+            message =
+              data?.detail ||
+              message;
+          } catch {
+            // Keep the default message.
+          }
+
+          throw new Error(message);
         }
 
+        /*
+         * Remove immediately from the
+         * current sidebar state.
+         */
         setConversations(
           (current) =>
             current.filter(
               (item) =>
-                item.id !==
-                conversationId
+                String(item.id) !==
+                String(conversationId)
             )
         );
 
+        /*
+         * If the deleted conversation was
+         * currently open, return to a fresh chat.
+         */
         if (
-          activeConversationId ===
-          conversationId
+          String(activeConversationId) ===
+          String(conversationId)
         ) {
           setActiveConversationId(null);
           setActivePage("chat");
@@ -312,6 +411,10 @@ function App() {
       }
     };
 
+  /* =======================================================
+     RENDER
+     ======================================================= */
+
   return (
     <div className="nova-app">
       <div className="background-grid" />
@@ -320,11 +423,20 @@ function App() {
 
       <div className="background-glow glow-two" />
 
+      {/* Global NOVA voice runtime */}
+      <VoiceController />
+
+      {/* ===================================================
+          SIDEBAR
+         =================================================== */}
+
       <Sidebar
         activePage={activePage}
         onNavigate={navigate}
         mobileOpen={mobileSidebar}
-        conversations={conversations}
+        conversations={
+          conversations
+        }
         activeConversationId={
           activeConversationId
         }
@@ -339,9 +451,14 @@ function App() {
         }
       />
 
+      {/* ===================================================
+          MOBILE SIDEBAR BACKDROP
+         =================================================== */}
+
       {mobileSidebar && (
         <button
           className="mobile-backdrop"
+          type="button"
           onClick={() =>
             setMobileSidebar(false)
           }
@@ -349,9 +466,15 @@ function App() {
         />
       )}
 
+      {/* ===================================================
+          MAIN AREA
+         =================================================== */}
+
       <div className="nova-main">
         <Topbar
-          activePage={pages[activePage]}
+          activePage={
+            pages[activePage]
+          }
           onMenuClick={() =>
             setMobileSidebar(true)
           }
@@ -361,6 +484,10 @@ function App() {
         />
 
         <AnimatePresence mode="wait">
+          {/* =================================================
+              COMMAND CENTER
+             ================================================= */}
+
           {activePage === "command" ? (
             <motion.div
               key="command"
@@ -379,6 +506,10 @@ function App() {
               />
             </motion.div>
           ) : activePage === "chat" ? (
+            /* =================================================
+               LOCAL CHAT
+               ================================================= */
+
             <motion.div
               key={`chat-${
                 activeConversationId ||
@@ -418,6 +549,10 @@ function App() {
             </motion.div>
           ) : activePage ===
             "knowledge" ? (
+            /* =================================================
+               KNOWLEDGE VAULT
+               ================================================= */
+
             <motion.div
               key="knowledge"
               initial={{
@@ -440,6 +575,10 @@ function App() {
               <KnowledgeVault />
             </motion.div>
           ) : (
+            /* =================================================
+               PLACEHOLDER MODULES
+               ================================================= */
+
             <PlaceholderPage
               key={activePage}
               page={activePage}
@@ -451,6 +590,10 @@ function App() {
         </AnimatePresence>
       </div>
 
+      {/* =====================================================
+          COMMAND PALETTE
+         ===================================================== */}
+
       <AnimatePresence>
         {commandOpen && (
           <CommandPalette
@@ -461,6 +604,10 @@ function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* =====================================================
+          HISTORY SYNC INDICATOR
+         ===================================================== */}
 
       {historyLoading && (
         <div

@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.model_engine.routes import router as model_engine_router
 from app.api.chat import router as chat_router
 from app.api.history import router as history_router
 from app.api.knowledge import router as knowledge_router
 from app.api.knowledge_search import (
     router as knowledge_search_router,
 )
+from app.api.agents.routes import router as agents_router
 
 from app.core.database import Base, engine
 from app.core import models
@@ -66,6 +68,14 @@ app.include_router(
 
 app.include_router(
     history_router
+)
+
+app.include_router(
+    model_engine_router
+)
+
+app.include_router(
+    agents_router
 )
 
 

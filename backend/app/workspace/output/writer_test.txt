@@ -1,0 +1,2 @@
+NOVA file writer test
+File created successfully.

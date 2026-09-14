@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
+import mimetypes
 
 from fastapi import (
     APIRouter,
@@ -7,6 +9,7 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -32,6 +35,23 @@ router = APIRouter(
 )
 
 
+# ---------------------------------------------------------------------------
+# NOVA WORKSPACE
+# ---------------------------------------------------------------------------
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+WORKSPACE_ROOT = (
+    BACKEND_ROOT
+    / "app"
+    / "workspace"
+).resolve()
+
+
+# ---------------------------------------------------------------------------
+# REQUEST / RESPONSE MODELS
+# ---------------------------------------------------------------------------
+
 class AttachmentReference(BaseModel):
     file_id: str
     filename: Optional[str] = None
@@ -53,6 +73,10 @@ class ChatResponse(BaseModel):
     model: str
     conversation_id: str
 
+
+# ---------------------------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------------------------
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -241,6 +265,55 @@ Instructions:
 """.strip()
 
 
+# ---------------------------------------------------------------------------
+# SECURE WORKSPACE PATH RESOLUTION
+# ---------------------------------------------------------------------------
+
+def _resolve_workspace_download(
+    file_path: str,
+) -> Path:
+    """
+    Resolve a requested workspace file while preventing
+    path traversal outside NOVA's workspace.
+    """
+
+    if not file_path or not str(file_path).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="File path is required.",
+        )
+
+    raw_path = Path(
+        str(file_path).strip()
+    )
+
+    if raw_path.is_absolute():
+        resolved = raw_path.resolve()
+    else:
+        resolved = (
+            WORKSPACE_ROOT / raw_path
+        ).resolve()
+
+    try:
+        resolved.relative_to(
+            WORKSPACE_ROOT
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Access denied: requested file "
+                "must remain inside NOVA's workspace."
+            ),
+        ) from exc
+
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# HEALTH
+# ---------------------------------------------------------------------------
+
 @router.get("/health")
 def chat_health():
     return {
@@ -248,6 +321,66 @@ def chat_health():
         "service": "nova-chat",
     }
 
+
+# ---------------------------------------------------------------------------
+# FILE DOWNLOAD
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/download/{file_path:path}",
+)
+def download_workspace_file(
+    file_path: str,
+):
+    """
+    Download a generated or existing file from
+    NOVA's controlled workspace.
+
+    Example:
+
+    /api/chat/download/output/agent_test_report.docx
+
+    Only files inside app/workspace are accessible.
+    """
+
+    path = _resolve_workspace_download(
+        file_path
+    )
+
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Workspace file not found: "
+                f"{file_path}"
+            ),
+        )
+
+    if not path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail="Requested workspace path is not a file.",
+        )
+
+    media_type, _ = mimetypes.guess_type(
+        path.name
+    )
+
+    if not media_type:
+        media_type = (
+            "application/octet-stream"
+        )
+
+    return FileResponse(
+        path=str(path),
+        media_type=media_type,
+        filename=path.name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CHAT FILE UPLOAD
+# ---------------------------------------------------------------------------
 
 @router.post("/upload")
 async def upload_chat_file(
@@ -292,6 +425,10 @@ async def upload_chat_file(
             ),
         ) from exc
 
+
+# ---------------------------------------------------------------------------
+# MAIN CHAT
+# ---------------------------------------------------------------------------
 
 @router.post(
     "/",

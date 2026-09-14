@@ -101,6 +101,9 @@ function MetricCard({ metric, index }) {
         opacity: 1,
         y: 0,
       }}
+      whileHover={{
+        y: -3,
+      }}
       transition={{
         duration: 0.55,
         delay: index * 0.1,
@@ -113,9 +116,7 @@ function MetricCard({ metric, index }) {
 
       <div className="metric-data">
         <span>{metric.label}</span>
-
         <strong>{metric.value}</strong>
-
         <small>{metric.detail}</small>
       </div>
 
@@ -129,10 +130,16 @@ function MetricCard({ metric, index }) {
 
 function MissionRow({ mission, onNavigate }) {
   return (
-    <button
+    <motion.button
       className="mission-row"
       type="button"
       onClick={() => onNavigate("missions")}
+      whileHover={{
+        x: 3,
+      }}
+      transition={{
+        duration: 0.18,
+      }}
     >
       <span className="mission-number">
         {mission.number}
@@ -154,7 +161,6 @@ function MissionRow({ mission, onNavigate }) {
 
         <div className="mission-progress-label">
           <span>Readiness</span>
-
           <strong>{mission.progress}%</strong>
         </div>
 
@@ -171,7 +177,7 @@ function MissionRow({ mission, onNavigate }) {
         size={16}
         className="mission-arrow"
       />
-    </button>
+    </motion.button>
   );
 }
 
@@ -205,7 +211,7 @@ export default function CommandCenter({
             variants={heroItem}
             transition={{
               duration: 0.8,
-              delay: 0,
+              delay: 0.05,
               ...heroTransition,
             }}
           >
@@ -230,7 +236,7 @@ export default function CommandCenter({
             }}
             transition={{
               duration: 0.6,
-              delay: 0.15,
+              delay: 0.2,
               ease: "easeOut",
             }}
           >
@@ -248,7 +254,7 @@ export default function CommandCenter({
             }}
             transition={{
               duration: 0.6,
-              delay: 0.22,
+              delay: 0.28,
               ease: "easeOut",
             }}
           >
@@ -270,14 +276,16 @@ export default function CommandCenter({
             }}
             transition={{
               duration: 0.55,
-              delay: 0.3,
+              delay: 0.36,
               ease: "easeOut",
             }}
           >
             <button
               className="primary-action"
               type="button"
-              onClick={() => onNavigate("missions")}
+              onClick={() =>
+                onNavigate("missions")
+              }
             >
               <Zap size={17} />
               START A MISSION
@@ -286,7 +294,9 @@ export default function CommandCenter({
             <button
               className="secondary-action"
               type="button"
-              onClick={() => onNavigate("chat")}
+              onClick={() =>
+                onNavigate("chat")
+              }
             >
               <MessageSquare size={17} />
               ASK NOVA
@@ -305,7 +315,7 @@ export default function CommandCenter({
             }}
             transition={{
               duration: 0.55,
-              delay: 0.42,
+              delay: 0.48,
               ease: "easeOut",
             }}
           >
@@ -326,14 +336,14 @@ export default function CommandCenter({
           </motion.div>
         </div>
 
-        {/* NOVA CORE */}
+        {/* NOVA ORB */}
 
         <motion.div
           className="core-panel"
           initial={{
             opacity: 0,
-            scale: 0.97,
-            y: 20,
+            scale: 0.94,
+            y: 25,
           }}
           animate={{
             opacity: 1,
@@ -341,13 +351,21 @@ export default function CommandCenter({
             y: 0,
           }}
           transition={{
-            duration: 0.9,
-            delay: 0.18,
+            duration: 1,
+            delay: 0.2,
             ease: [0.22, 1, 0.36, 1],
           }}
         >
           <div className="core-panel-header">
-            <span>CORE INTELLIGENCE // 001</span>
+            <div className="core-header-left">
+              <span className="core-header-index">
+                CORE INTELLIGENCE // 001
+              </span>
+
+              <span className="core-header-state">
+                SOVEREIGN RUNTIME
+              </span>
+            </div>
 
             <span className="live-indicator">
               <StatusDot />
@@ -355,16 +373,58 @@ export default function CommandCenter({
             </span>
           </div>
 
-          <NovaCore />
+          <div className="core-scene">
+            <div className="scene-grid-overlay" />
+
+            <div className="scene-depth-line scene-depth-line-1" />
+            <div className="scene-depth-line scene-depth-line-2" />
+            <div className="scene-depth-line scene-depth-line-3" />
+
+            <NovaCore />
+
+            <div className="scene-label scene-label-top-left">
+              <span>ENTITY</span>
+              <strong>NOVA-001</strong>
+            </div>
+
+            <div className="scene-label scene-label-top-right">
+              <span>STATE</span>
+              <strong>ACTIVE</strong>
+            </div>
+
+            <div className="scene-label scene-label-bottom-left">
+              <span>MODE</span>
+              <strong>LOCAL</strong>
+            </div>
+
+            <div className="scene-label scene-label-bottom-right">
+              <span>LINK</span>
+              <strong>SECURE</strong>
+            </div>
+
+            <div className="scene-center-marker">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
 
           <div className="core-panel-footer">
-            <strong>
-              LOCAL REASONING ENGINE
-            </strong>
+            <div>
+              <strong>
+                LOCAL REASONING ENGINE
+              </strong>
 
-            <span>
-              LLAMA 3.2 · OLLAMA · GPU ACCELERATED
-            </span>
+              <span>
+                LLAMA 3.2 · OLLAMA · GPU ACCELERATED
+              </span>
+            </div>
+
+            <div className="core-footer-status">
+              <span className="footer-status-pulse" />
+              RUNTIME STABLE
+            </div>
           </div>
 
           <div className="core-corner core-corner-tl" />
@@ -423,7 +483,9 @@ export default function CommandCenter({
 
             <button
               type="button"
-              onClick={() => onNavigate("missions")}
+              onClick={() =>
+                onNavigate("missions")
+              }
             >
               VIEW ALL
               <ArrowUpRight size={14} />
@@ -558,7 +620,9 @@ export default function CommandCenter({
               key={item.title}
               className="quick-card"
               type="button"
-              onClick={() => onNavigate(item.page)}
+              onClick={() =>
+                onNavigate(item.page)
+              }
               initial={{
                 opacity: 0,
                 y: 20,
@@ -566,6 +630,9 @@ export default function CommandCenter({
               whileInView={{
                 opacity: 1,
                 y: 0,
+              }}
+              whileHover={{
+                y: -4,
               }}
               viewport={{
                 once: true,

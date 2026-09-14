@@ -1,0 +1,3 @@
+﻿NOVA file reader test
+This is a local workspace file.
+Agent tools are working.

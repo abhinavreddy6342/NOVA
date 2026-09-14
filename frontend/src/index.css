@@ -341,6 +341,10 @@ h3,
 
   padding: 21px 15px 15px;
 
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
   border-right: 1px solid var(--nova-border);
 
   background:
@@ -384,6 +388,8 @@ h3,
   display: flex;
   align-items: center;
   gap: 12px;
+
+  flex-shrink: 0;
 
   padding: 4px 9px 24px;
 }
@@ -494,6 +500,8 @@ h3,
   width: 100%;
   height: 45px;
 
+  flex-shrink: 0;
+
   display: flex;
   align-items: center;
   gap: 10px;
@@ -587,6 +595,7 @@ h3,
 
 .sidebar-section {
   margin-top: 29px;
+  flex-shrink: 0;
 }
 
 .sidebar-label {
@@ -694,6 +703,7 @@ h3,
 
 .sidebar-bottom {
   margin-top: auto;
+  flex-shrink: 0;
 }
 
 .runtime-card {
@@ -4867,13 +4877,17 @@ h3,
 
 .recent-chat-section {
   margin-top: 22px;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  flex-shrink: 1;
 }
 
 .recent-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 /* Recent chat list */
@@ -4883,6 +4897,9 @@ h3,
   gap: 4px;
 
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  flex-shrink: 1;
 
   max-height: 170px;
 
@@ -5101,3 +5118,1170 @@ h3,
   }
 }
 
+
+/* =========================================================
+   NOVA 3D INTELLIGENCE ENVIRONMENT — V1
+   Added without removing existing NOVA styles.
+   ========================================================= */
+
+.nova-scene-3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 1;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(77, 206, 255, 0.08), transparent 34%),
+    radial-gradient(circle at 50% 72%, rgba(109, 220, 255, 0.035), transparent 46%),
+    transparent;
+}
+
+.nova-scene-3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.core-scene {
+  position: absolute;
+  inset: 46px 0 52px;
+  overflow: hidden;
+  z-index: 2;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(70, 200, 250, 0.07), transparent 29%),
+    linear-gradient(180deg, rgba(2, 5, 8, 0.02), rgba(2, 5, 8, 0.22));
+}
+
+.core-scene::before {
+  content: "";
+  position: absolute;
+  inset: 7% 10%;
+  border: 1px solid rgba(109, 220, 255, 0.045);
+  border-radius: 50%;
+  transform: rotateX(67deg) rotateZ(-8deg);
+  box-shadow:
+    0 0 80px rgba(109, 220, 255, 0.035),
+    inset 0 0 55px rgba(109, 220, 255, 0.02);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.scene-grid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(109, 220, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(109, 220, 255, 0.025) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at center, #000 12%, rgba(0, 0, 0, 0.7) 46%, transparent 82%);
+  -webkit-mask-image: radial-gradient(circle at center, #000 12%, rgba(0, 0, 0, 0.7) 46%, transparent 82%);
+}
+
+.scene-depth-line {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border: 1px solid rgba(109, 220, 255, 0.07);
+  border-radius: 50%;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotateX(65deg);
+}
+
+.scene-depth-line-1 {
+  width: 68%;
+  height: 33%;
+}
+
+.scene-depth-line-2 {
+  width: 49%;
+  height: 24%;
+  opacity: 0.72;
+}
+
+.scene-depth-line-3 {
+  width: 32%;
+  height: 15%;
+  opacity: 0.5;
+}
+
+.scene-label {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.scene-label span {
+  color: rgba(135, 168, 184, 0.52);
+  font-size: 7px;
+  letter-spacing: 0.18em;
+}
+
+.scene-label strong {
+  color: rgba(222, 246, 255, 0.78);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+}
+
+.scene-label-top-left {
+  top: 17px;
+  left: 18px;
+}
+
+.scene-label-top-right {
+  top: 17px;
+  right: 18px;
+  text-align: right;
+}
+
+.scene-label-bottom-left {
+  left: 18px;
+  bottom: 16px;
+}
+
+.scene-label-bottom-right {
+  right: 18px;
+  bottom: 16px;
+  text-align: right;
+}
+
+.scene-center-marker {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.26;
+}
+
+.scene-center-marker span {
+  position: absolute;
+  display: block;
+  background: var(--nova-accent);
+  box-shadow: 0 0 8px rgba(109, 220, 255, 0.35);
+}
+
+.scene-center-marker span:nth-child(1),
+.scene-center-marker span:nth-child(2) {
+  top: 50%;
+  width: 22px;
+  height: 1px;
+}
+
+.scene-center-marker span:nth-child(1) {
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.scene-center-marker span:nth-child(2) {
+  left: 0;
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.scene-center-marker span:nth-child(3),
+.scene-center-marker span:nth-child(4) {
+  width: 4px;
+  height: 4px;
+  border: 1px solid var(--nova-accent);
+  background: transparent;
+  box-shadow: none;
+}
+
+.scene-center-marker span:nth-child(3) {
+  top: 0;
+  left: 0;
+}
+
+.scene-center-marker span:nth-child(4) {
+  right: 0;
+  bottom: 0;
+}
+
+.core-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.core-header-state {
+  padding-left: 12px;
+  border-left: 1px solid rgba(180, 215, 235, 0.08);
+  color: rgba(120, 155, 171, 0.64);
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.core-panel-footer {
+  left: 18px;
+  right: 18px;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.core-panel-footer > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.core-footer-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(123, 224, 170, 0.58);
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+}
+
+.footer-status-pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--nova-success);
+  box-shadow: 0 0 9px rgba(123, 224, 170, 0.45);
+  animation: nova-status-pulse 2s ease-in-out infinite;
+}
+
+.core-panel:hover {
+  border-color: rgba(109, 220, 255, 0.15);
+}
+
+.core-panel:hover .scene-label strong {
+  color: rgba(232, 250, 255, 0.92);
+}
+
+@media (max-width: 1180px) {
+  .core-scene {
+    inset: 43px 0 50px;
+  }
+}
+
+@media (max-width: 620px) {
+  .core-scene {
+    inset: 42px 0 49px;
+  }
+
+  .scene-depth-line-1 {
+    width: 78%;
+  }
+
+  .scene-depth-line-2 {
+    width: 57%;
+  }
+
+  .scene-depth-line-3 {
+    width: 38%;
+  }
+
+  .core-header-state {
+    display: none;
+  }
+
+  .core-panel-footer {
+    align-items: flex-start;
+  }
+
+  .core-footer-status {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer-status-pulse {
+    animation: none;
+  }
+}
+
+/* =========================================================
+   NOVA CHAT — SCROLL CONSTRAINT FIX
+   Keeps the composer visible and makes messages independently
+   scrollable.
+   ========================================================= */
+
+.nova-chat-page {
+  min-height: calc(100vh - 68px);
+}
+
+.nova-chat-shell {
+  height: calc(100vh - 180px);
+  min-height: 560px;
+  max-height: calc(100vh - 180px);
+}
+
+.nova-chat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+.nova-chat-messages {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.nova-chat-composer {
+  flex: 0 0 auto;
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .nova-chat-page {
+    min-height: calc(100vh - 62px);
+  }
+
+  .nova-chat-shell {
+    height: calc(100vh - 155px);
+    min-height: 520px;
+    max-height: calc(100vh - 155px);
+  }
+}
+
+@media (max-width: 600px) {
+  .nova-chat-shell {
+    height: calc(100vh - 145px);
+    min-height: 500px;
+    max-height: calc(100vh - 145px);
+  }
+
+  .nova-chat-body {
+    height: 0;
+  }
+
+  .nova-chat-messages {
+    overflow-y: auto;
+  }
+}
+/* =========================================================
+   NOVA GENERATED ARTIFACTS
+   Premium downloadable deliverable system
+   ========================================================= */
+
+.nova-agent-artifacts {
+  position: relative;
+
+  margin-top: 16px;
+  padding: 13px;
+
+  overflow: hidden;
+
+  border: 1px solid rgba(109, 220, 255, 0.14);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.045),
+      rgba(255, 255, 255, 0.018) 45%,
+      rgba(4, 8, 12, 0.34)
+    );
+
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 16px 38px rgba(0, 0, 0, 0.18),
+    0 0 28px rgba(109, 220, 255, 0.025);
+}
+
+.nova-agent-artifacts::before {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  left: 14px;
+  right: 14px;
+
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(109, 220, 255, 0.38),
+      transparent
+    );
+
+  opacity: 0.8;
+}
+
+.nova-agent-artifacts::after {
+  content: "";
+
+  position: absolute;
+
+  width: 120px;
+  height: 120px;
+
+  top: -70px;
+  right: -55px;
+
+  border-radius: 50%;
+
+  background:
+    rgba(109, 220, 255, 0.055);
+
+  filter: blur(24px);
+
+  pointer-events: none;
+
+  transition:
+    transform 350ms var(--ease-out),
+    opacity 350ms ease;
+}
+
+.nova-agent-artifacts:hover::after {
+  transform: scale(1.35);
+  opacity: 1;
+}
+
+/* =========================================================
+   ARTIFACT HEADER
+   ========================================================= */
+
+.nova-agent-artifacts-header {
+  position: relative;
+
+  z-index: 2;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+
+  padding: 0 2px 10px;
+
+  border-bottom: 1px solid
+    rgba(180, 215, 235, 0.065);
+}
+
+.nova-agent-artifacts-header span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  color: #bfeaf5;
+
+  font-size: 8px;
+  font-weight: 700;
+
+  letter-spacing: 0.17em;
+}
+
+.nova-agent-artifacts-header span::before {
+  content: "";
+
+  width: 5px;
+  height: 5px;
+
+  flex: 0 0 auto;
+
+  border-radius: 50%;
+
+  background: var(--nova-accent);
+
+  box-shadow:
+    0 0 0 3px rgba(109, 220, 255, 0.06),
+    0 0 12px rgba(109, 220, 255, 0.48);
+
+  animation:
+    nova-artifact-status-pulse
+    2s
+    ease-in-out
+    infinite;
+}
+
+.nova-agent-artifacts-header small {
+  color: #5f7786;
+
+  font-family: var(--font-mono);
+
+  font-size: 7px;
+
+  letter-spacing: 0.12em;
+}
+
+/* =========================================================
+   ARTIFACT LIST
+   ========================================================= */
+
+.nova-agent-artifact-list {
+  position: relative;
+
+  z-index: 2;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 7px;
+
+  margin-top: 9px;
+}
+
+.nova-agent-artifact {
+  position: relative;
+
+  display: grid;
+
+  grid-template-columns:
+    34px
+    minmax(0, 1fr)
+    auto;
+
+  align-items: center;
+
+  gap: 10px;
+
+  min-height: 58px;
+
+  padding: 8px;
+
+  border: 1px solid
+    rgba(180, 215, 235, 0.075);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.032),
+      rgba(255, 255, 255, 0.012)
+    );
+
+  transition:
+    transform 180ms var(--ease-out),
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.nova-agent-artifact:hover {
+  transform: translateY(-1px);
+
+  border-color:
+    rgba(109, 220, 255, 0.19);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(109, 220, 255, 0.045),
+      rgba(255, 255, 255, 0.018)
+    );
+
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.16),
+    0 0 20px rgba(109, 220, 255, 0.035);
+}
+
+/* =========================================================
+   ARTIFACT ICON
+   ========================================================= */
+
+.nova-agent-artifact-icon {
+  position: relative;
+
+  width: 34px;
+  height: 38px;
+
+  display: grid;
+  place-items: center;
+
+  border: 1px solid
+    rgba(109, 220, 255, 0.16);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.08),
+      rgba(109, 220, 255, 0.025)
+    );
+
+  color: #a9eaff;
+
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035);
+
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms var(--ease-out);
+}
+
+.nova-agent-artifact:hover
+.nova-agent-artifact-icon {
+  transform: translateY(-1px);
+
+  color: #e5fbff;
+
+  border-color:
+    rgba(109, 220, 255, 0.3);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.12),
+      rgba(109, 220, 255, 0.04)
+    );
+
+  box-shadow:
+    0 0 16px rgba(109, 220, 255, 0.06);
+}
+
+/* Tiny technical corner mark */
+.nova-agent-artifact-icon::after {
+  content: "";
+
+  position: absolute;
+
+  right: 3px;
+  bottom: 3px;
+
+  width: 5px;
+  height: 5px;
+
+  border-right: 1px solid
+    rgba(109, 220, 255, 0.4);
+
+  border-bottom: 1px solid
+    rgba(109, 220, 255, 0.4);
+}
+
+/* =========================================================
+   ARTIFACT INFORMATION
+   ========================================================= */
+
+.nova-agent-artifact-info {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+}
+
+.nova-agent-artifact-info strong {
+  overflow: hidden;
+
+  color: #eaf7fb;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  line-height: 1.3;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-agent-artifact-info small {
+  overflow: hidden;
+
+  color: #718897;
+
+  font-family: var(--font-mono);
+
+  font-size: 7px;
+
+  line-height: 1.2;
+
+  letter-spacing: 0.09em;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   DOWNLOAD BUTTON
+   ========================================================= */
+
+.nova-agent-artifact-download {
+  position: relative;
+
+  height: 34px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+
+  flex: 0 0 auto;
+
+  padding: 0 11px;
+
+  overflow: hidden;
+
+  border: 1px solid
+    rgba(109, 220, 255, 0.2);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.10),
+      rgba(109, 220, 255, 0.035)
+    );
+
+  color: #dff8ff;
+
+  text-decoration: none;
+
+  font-size: 7px;
+  font-weight: 700;
+
+  letter-spacing: 0.13em;
+
+  transition:
+    transform 180ms var(--ease-out),
+    color 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.nova-agent-artifact-download::before {
+  content: "";
+
+  position: absolute;
+
+  inset: 0;
+
+  background:
+    linear-gradient(
+      105deg,
+      transparent 18%,
+      rgba(255, 255, 255, 0.11),
+      transparent 82%
+    );
+
+  transform: translateX(-120%);
+
+  transition:
+    transform 500ms var(--ease-out);
+}
+
+.nova-agent-artifact-download svg,
+.nova-agent-artifact-download span {
+  position: relative;
+
+  z-index: 2;
+}
+
+.nova-agent-artifact-download svg {
+  transition:
+    transform 180ms var(--ease-out);
+}
+
+.nova-agent-artifact-download:hover {
+  transform: translateY(-1px);
+
+  color: #ffffff;
+
+  border-color:
+    rgba(109, 220, 255, 0.4);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.17),
+      rgba(109, 220, 255, 0.06)
+    );
+
+  box-shadow:
+    0 0 22px rgba(109, 220, 255, 0.08),
+    inset 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.nova-agent-artifact-download:hover::before {
+  transform: translateX(120%);
+}
+
+.nova-agent-artifact-download:hover svg {
+  transform: translateY(1px);
+}
+
+.nova-agent-artifact-download:active {
+  transform: translateY(0);
+}
+
+/* =========================================================
+   ARTIFACT ENTRY ANIMATION
+   ========================================================= */
+
+.nova-agent-artifact {
+  animation:
+    nova-artifact-enter
+    380ms
+    var(--ease-out)
+    both;
+}
+
+.nova-agent-artifact:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.nova-agent-artifact:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.nova-agent-artifact:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+@keyframes nova-artifact-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nova-artifact-status-pulse {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.82);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+/* =========================================================
+   MOBILE ARTIFACT SYSTEM
+   ========================================================= */
+
+@media (max-width: 600px) {
+  .nova-agent-artifacts {
+    padding: 11px;
+  }
+
+  .nova-agent-artifacts-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .nova-agent-artifact {
+    grid-template-columns:
+      34px
+      minmax(0, 1fr);
+
+    align-items: center;
+  }
+
+  .nova-agent-artifact-download {
+    grid-column: 1 / -1;
+
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-agent-artifact,
+  .nova-agent-artifact-download,
+  .nova-agent-artifacts-header span::before {
+    animation: none;
+    transition: none;
+  }
+}
+/* =========================================================
+   NOVA MARKDOWN — PREMIUM RESPONSE SYSTEM
+   ========================================================= */
+
+.nova-markdown {
+  width: 100%;
+  color: rgba(235, 242, 248, 0.92);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.78;
+  letter-spacing: 0.01em;
+  word-break: break-word;
+}
+
+/* ---------- paragraphs ---------- */
+
+.nova-markdown p {
+  margin: 0 0 0.9rem;
+}
+
+.nova-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- headings ---------- */
+
+.nova-markdown h1,
+.nova-markdown h2,
+.nova-markdown h3,
+.nova-markdown h4 {
+  margin: 1.35rem 0 0.65rem;
+  color: #f4f8fb;
+  font-family: "Audiowide", sans-serif;
+  font-weight: 400;
+  line-height: 1.28;
+  letter-spacing: 0.025em;
+}
+
+.nova-markdown h1 {
+  font-size: 1.35rem;
+}
+
+.nova-markdown h2 {
+  font-size: 1.15rem;
+}
+
+.nova-markdown h3 {
+  font-size: 1rem;
+}
+
+.nova-markdown h4 {
+  font-size: 0.92rem;
+}
+
+.nova-markdown h1:first-child,
+.nova-markdown h2:first-child,
+.nova-markdown h3:first-child,
+.nova-markdown h4:first-child {
+  margin-top: 0;
+}
+
+/* ---------- emphasis ---------- */
+
+.nova-markdown strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.nova-markdown em {
+  color: rgba(220, 232, 240, 0.92);
+}
+
+/* ---------- lists ---------- */
+
+.nova-markdown ul,
+.nova-markdown ol {
+  margin: 0.65rem 0 1rem;
+  padding-left: 1.45rem;
+}
+
+.nova-markdown li {
+  margin: 0.35rem 0;
+  padding-left: 0.18rem;
+}
+
+.nova-markdown li::marker {
+  color: rgba(190, 225, 242, 0.75);
+}
+
+/* ---------- nested lists ---------- */
+
+.nova-markdown li > ul,
+.nova-markdown li > ol {
+  margin-top: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+/* ---------- links ---------- */
+
+.nova-markdown a {
+  color: #dcecf5;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(220, 236, 245, 0.3);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    text-shadow 180ms ease;
+}
+
+.nova-markdown a:hover {
+  color: #ffffff;
+  border-color: rgba(220, 236, 245, 0.85);
+  text-shadow: 0 0 12px rgba(190, 225, 242, 0.28);
+}
+
+/* ---------- blockquote ---------- */
+
+.nova-markdown blockquote {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 2px solid rgba(196, 226, 241, 0.55);
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(222, 234, 241, 0.82);
+  border-radius: 0 8px 8px 0;
+}
+
+.nova-markdown blockquote p {
+  margin: 0;
+}
+
+/* ---------- horizontal rule ---------- */
+
+.nova-markdown hr {
+  height: 1px;
+  margin: 1.25rem 0;
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(210, 231, 241, 0.22),
+    transparent
+  );
+}
+
+/* ---------- inline code ---------- */
+
+.nova-markdown code {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.84em;
+}
+
+.nova-markdown :not(pre) > code {
+  padding: 0.18rem 0.42rem;
+  border: 1px solid rgba(205, 229, 240, 0.12);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #eaf6fb;
+}
+
+/* ---------- code blocks ---------- */
+
+.nova-markdown pre {
+  margin: 1rem 0;
+  padding: 1rem 1.05rem;
+  overflow-x: auto;
+  border: 1px solid rgba(210, 232, 243, 0.10);
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.035),
+      rgba(255, 255, 255, 0.018)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.nova-markdown pre code {
+  display: block;
+  min-width: max-content;
+  color: rgba(235, 244, 249, 0.92);
+  line-height: 1.65;
+}
+
+/* ---------- tables ---------- */
+
+.nova-markdown table {
+  width: 100%;
+  margin: 1rem 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid rgba(214, 233, 242, 0.10);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.nova-markdown th,
+.nova-markdown td {
+  padding: 0.68rem 0.78rem;
+  text-align: left;
+  border-right: 1px solid rgba(214, 233, 242, 0.07);
+  border-bottom: 1px solid rgba(214, 233, 242, 0.07);
+}
+
+.nova-markdown th:last-child,
+.nova-markdown td:last-child {
+  border-right: 0;
+}
+
+.nova-markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.nova-markdown th {
+  color: #f5f9fb;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.nova-markdown td {
+  color: rgba(225, 236, 242, 0.86);
+}
+
+/* ---------- table responsiveness ---------- */
+
+.nova-markdown table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* ---------- first / last spacing ---------- */
+
+.nova-markdown > :first-child {
+  margin-top: 0;
+}
+
+.nova-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- mobile ---------- */
+
+@media (max-width: 700px) {
+  .nova-markdown {
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .nova-markdown h1 {
+    font-size: 1.2rem;
+  }
+
+  .nova-markdown h2 {
+    font-size: 1.05rem;
+  }
+
+  .nova-markdown pre {
+    padding: 0.85rem;
+  }
+
+  .nova-markdown th,
+  .nova-markdown td {
+    padding: 0.58rem 0.65rem;
+  }
+}

@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import desc
@@ -30,7 +31,7 @@ def create_conversation(
 def get_conversation(
     db: Session,
     conversation_id: str,
-):
+) -> Conversation | None:
     return (
         db.query(Conversation)
         .filter(
@@ -42,7 +43,7 @@ def get_conversation(
 
 def list_conversations(
     db: Session,
-):
+) -> list[Conversation]:
     return (
         db.query(Conversation)
         .order_by(
@@ -52,13 +53,25 @@ def list_conversations(
     )
 
 
+def _touch_conversation(
+    conversation: Conversation,
+) -> None:
+    """
+    Update the conversation's activity timestamp.
+
+    This ensures recently active conversations appear
+    at the top of the Recent Chats list.
+    """
+    conversation.updated_at = datetime.utcnow()
+
+
 def add_message(
     db: Session,
     conversation: Conversation,
     role: str,
     content: str,
     model: str | None = None,
-):
+) -> ChatMessage:
     message = ChatMessage(
         id=str(uuid4()),
         conversation_id=conversation.id,
@@ -75,8 +88,13 @@ def add_message(
         else ""
     )
 
+    # Mark the conversation as recently active.
+    _touch_conversation(conversation)
+
     db.commit()
+
     db.refresh(message)
+    db.refresh(conversation)
 
     return message
 
@@ -87,7 +105,7 @@ def add_attachment(
     file_id: str,
     filename: str,
     content_type: str | None = None,
-):
+) -> ChatAttachment:
     attachment = ChatAttachment(
         id=str(uuid4()),
         message_id=message.id,
@@ -97,6 +115,19 @@ def add_attachment(
     )
 
     db.add(attachment)
+
+    # Attachment activity also updates the conversation timestamp.
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == message.conversation_id
+        )
+        .first()
+    )
+
+    if conversation:
+        _touch_conversation(conversation)
+
     db.commit()
     db.refresh(attachment)
 

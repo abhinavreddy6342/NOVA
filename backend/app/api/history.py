@@ -25,6 +25,9 @@ router = APIRouter(
 def get_conversations(
     db: Session = Depends(get_db),
 ):
+    """
+    Return all conversations ordered by latest activity.
+    """
     conversations = list_conversations(db)
 
     return {
@@ -46,6 +49,9 @@ def get_conversations(
 def new_conversation(
     db: Session = Depends(get_db),
 ):
+    """
+    Create a new empty conversation.
+    """
     conversation = create_conversation(db)
 
     return {
@@ -57,13 +63,14 @@ def new_conversation(
     }
 
 
-@router.get(
-    "/conversations/{conversation_id}"
-)
+@router.get("/conversations/{conversation_id}")
 def get_conversation_detail(
     conversation_id: str,
     db: Session = Depends(get_db),
 ):
+    """
+    Return one conversation with all messages and attachments.
+    """
     conversation = get_conversation(
         db,
         conversation_id,
@@ -81,8 +88,7 @@ def get_conversation_detail(
         attachments = (
             db.query(ChatAttachment)
             .filter(
-                ChatAttachment.message_id
-                == message.id
+                ChatAttachment.message_id == message.id
             )
             .all()
         )
@@ -117,13 +123,14 @@ def get_conversation_detail(
     }
 
 
-@router.delete(
-    "/conversations/{conversation_id}"
-)
+@router.delete("/conversations/{conversation_id}")
 def remove_conversation(
     conversation_id: str,
     db: Session = Depends(get_db),
 ):
+    """
+    Delete a conversation and its associated history.
+    """
     deleted = delete_conversation(
         db,
         conversation_id,
