@@ -208,16 +208,26 @@ def _resolve_chat_upload_path(
     return source_path
 
 
-def _stage_spreadsheet_attachment(
+ALLOWED_ATTACHMENT_EXTENSIONS = {
+    ".csv",
+    ".xlsx",
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".md",
+    ".json",
+    ".png",
+    ".jpg",
+    ".jpeg",
+}
+
+
+def _stage_attachment(
     attachment: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Copy an uploaded spreadsheet into NOVA's controlled
+    Copy an uploaded attachment into NOVA's controlled
     workspace/input directory.
-
-    The planner and spreadsheet tools operate only on the
-    controlled NOVA workspace, so uploaded attachments are
-    staged there before agent execution.
     """
 
     file_id = attachment.get(
@@ -227,7 +237,7 @@ def _stage_spreadsheet_attachment(
 
     if not file_id:
         raise ValueError(
-            "Spreadsheet attachment is missing file_id."
+            "Attachment is missing file_id."
         )
 
     source_path = _resolve_chat_upload_path(
@@ -236,10 +246,10 @@ def _stage_spreadsheet_attachment(
 
     extension = source_path.suffix.lower()
 
-    if extension not in ALLOWED_SPREADSHEET_EXTENSIONS:
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
         raise ValueError(
-            "Agent spreadsheet analysis supports only "
-            "CSV and XLSX attachments."
+            f"Unsupported attachment extension: {extension}. "
+            "Supported formats are CSV, XLSX, PDF, DOCX, TXT, MD, JSON, PNG, JPG."
         )
 
     original_filename = (
@@ -271,7 +281,7 @@ def _stage_spreadsheet_attachment(
         )
     except ValueError as exc:
         raise PermissionError(
-            "Access denied: staged spreadsheet must remain "
+            "Access denied: staged attachment must remain "
             "inside NOVA's workspace input directory."
         ) from exc
 
@@ -287,7 +297,7 @@ def _stage_spreadsheet_attachment(
 
     if not destination_path.exists():
         raise RuntimeError(
-            "Uploaded spreadsheet could not be staged "
+            "Uploaded attachment could not be staged "
             "into the NOVA workspace."
         )
 
@@ -316,9 +326,8 @@ def _prepare_agent_context(
     """
     Prepare context for agent execution.
 
-    Uploaded spreadsheet attachments are staged into
-    NOVA's controlled workspace and their workspace paths
-    are exposed to the planner through the objective.
+    Uploaded attachments are staged into NOVA's controlled workspace
+    and their workspace paths are exposed to the planner through the objective.
     """
 
     prepared_context: Dict[str, Any] = dict(
@@ -338,7 +347,7 @@ def _prepare_agent_context(
     staged_attachments: List[Dict[str, Any]] = []
 
     for attachment in attachments:
-        staged = _stage_spreadsheet_attachment(
+        staged = _stage_attachment(
             attachment
         )
 
@@ -350,25 +359,35 @@ def _prepare_agent_context(
         "attachments"
     ] = staged_attachments
 
-    spreadsheet_paths = [
+    staged_paths = [
         item["workspace_file_path"]
         for item in staged_attachments
     ]
 
     prepared_context[
-        "spreadsheet_files"
-    ] = spreadsheet_paths
+        "staged_files"
+    ] = staged_paths
 
-    if spreadsheet_paths:
+    # Separate spreadsheet vs document paths
+    spreadsheet_paths = [
+        p for p in staged_paths if p.endswith((".csv", ".xlsx"))
+    ]
+    document_paths = [
+        p for p in staged_paths if p.endswith((".pdf", ".docx", ".txt", ".md"))
+    ]
+
+    prepared_context["spreadsheet_files"] = spreadsheet_paths
+    prepared_context["document_files"] = document_paths
+
+    if staged_paths:
         attachment_instruction = (
-            "\n\nUploaded spreadsheet attachment(s) are available "
+            "\n\nUploaded workspace attachment(s) are available "
             "inside the NOVA workspace at:\n"
             + "\n".join(
                 f"- {path}"
-                for path in spreadsheet_paths
+                for path in staged_paths
             )
-            + "\nUse these local paths when the user's request "
-            "requires spreadsheet analysis."
+            + "\nUse these local workspace paths when executing tools."
         )
 
         prepared_context[

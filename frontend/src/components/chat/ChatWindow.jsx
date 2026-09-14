@@ -261,6 +261,20 @@ function isAgentRequest(message) {
     "generate powerpoint",
     ".pptx",
 
+    // Visualization / Charts
+    "create a chart",
+    "create chart",
+    "generate a chart",
+    "generate chart",
+    "bar chart",
+    "line chart",
+    "pie chart",
+    "scatter plot",
+    "visual summary",
+    "plot the data",
+    "visualize",
+    "visualise",
+
     // Plain file generation
     "create a file",
     "create file",
@@ -290,13 +304,20 @@ function isAgentRequest(message) {
   const naturalSpreadsheetPattern =
     /\b(analyze|analyse|inspect|read|review|summarize|summarise|calculate|compute|find|compare|identify|show)\b[\s\S]{0,120}\b(spreadsheet|excel|workbook|worksheet|csv|xlsx|xls|sales data|sales sheet|sales file|table)\b/i;
 
+  /*
+   * Natural-language visualization requests.
+   */
+  const naturalChartPattern =
+    /\b(create|generate|make|draw|plot|show)\b[\s\S]{0,120}\b(chart|graph|plot|bar chart|line chart|pie chart|scatter plot|visual summary|visualization)\b/i;
+
   return (
     agentSignals.some((signal) =>
       text.includes(signal)
     ) ||
     naturalDocumentPattern.test(text) ||
     naturalComputationPattern.test(text) ||
-    naturalSpreadsheetPattern.test(text)
+    naturalSpreadsheetPattern.test(text) ||
+    naturalChartPattern.test(text)
   );
 }
 
@@ -1483,18 +1504,9 @@ export default function ChatWindow({
        * spreadsheets. Spreadsheet attachments use the
        * agent pipeline.
        */
-      const hasSpreadsheetAttachment =
-        selectedFiles.some(
-          (file) =>
-            isSpreadsheetFile(file)
-        );
-
       const useAgent =
-        hasSpreadsheetAttachment ||
-        (
-          !selectedFiles.length &&
-          isAgentRequest(message)
-        );
+        selectedFiles.length > 0 ||
+        isAgentRequest(message);
 
       const initialStatus =
         useAgent

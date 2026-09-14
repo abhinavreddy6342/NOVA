@@ -1,0 +1,4 @@
+﻿id,department,expense,status
+1,Operations,4500.5,Approved
+2,Engineering,12800.0,Approved
+3,Logistics,3200.75,Pending

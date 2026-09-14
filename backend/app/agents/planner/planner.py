@@ -1030,6 +1030,108 @@ Return ONLY the document content.
             for term in write_terms
         )
 
+    def _is_pdf_write_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """Detect requests to create a PDF document."""
+        text = objective.lower().strip()
+        pdf_terms = (
+            "create a pdf",
+            "create pdf",
+            "generate a pdf",
+            "generate pdf",
+            "write a pdf",
+            "write pdf",
+            "make a pdf",
+            "make pdf",
+            ".pdf",
+            "pdf summary",
+            "pdf report",
+        )
+        return any(term in text for term in pdf_terms)
+
+    def _is_xlsx_write_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """Detect requests to generate an Excel workbook."""
+        text = objective.lower().strip()
+        xlsx_terms = (
+            "create an excel",
+            "create excel",
+            "generate an excel",
+            "generate excel",
+            "create xlsx",
+            "generate xlsx",
+            "excel report",
+            "excel workbook",
+            "make an excel",
+            "make excel",
+            "create an excel report",
+            "create excel report",
+        )
+        return any(term in text for term in xlsx_terms)
+
+    def _is_csv_write_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """Detect requests to generate a CSV file."""
+        text = objective.lower().strip()
+        csv_terms = (
+            "create a csv",
+            "create csv",
+            "generate a csv",
+            "generate csv",
+            "export csv",
+            "export a csv",
+            "save as csv",
+        )
+        return any(term in text for term in csv_terms)
+
+    def _is_pptx_write_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """Detect requests to generate a PowerPoint presentation."""
+        text = objective.lower().strip()
+        pptx_terms = (
+            "create a powerpoint",
+            "create powerpoint",
+            "generate a powerpoint",
+            "generate powerpoint",
+            "create a pptx",
+            "generate pptx",
+            "presentation",
+            "slide deck",
+            "slides",
+            ".pptx",
+        )
+        return any(term in text for term in pptx_terms)
+
+    def _is_visualization_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """Detect requests to generate data visualizations or charts."""
+        text = objective.lower().strip()
+        vis_terms = (
+            "create a chart",
+            "create chart",
+            "generate a chart",
+            "generate chart",
+            "bar chart",
+            "line chart",
+            "pie chart",
+            "scatter plot",
+            "visual summary",
+            "plot the data",
+            "visualize",
+            "visualise",
+        )
+        return any(term in text for term in vis_terms)
+
     # ------------------------------------------------------------------
     # KNOWLEDGE SEARCH PLAN
     # ------------------------------------------------------------------
@@ -1583,6 +1685,217 @@ Return ONLY valid JSON.
         }
 
     # ------------------------------------------------------------------
+    # PDF WRITE PLAN
+    # ------------------------------------------------------------------
+
+    def _force_pdf_write_plan(
+        self,
+        objective: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic PDF writer plan."""
+        file_path = (
+            self._extract_workspace_path(objective)
+            or self._generate_document_output_path(objective).replace(".docx", ".pdf")
+        )
+        if not file_path.endswith(".pdf"):
+            file_path = str(Path(file_path).with_suffix(".pdf")).replace("\\", "/")
+
+        title = self._extract_document_title(objective, file_path)
+        content = self._generate_document_content(objective, file_path, title)
+
+        return {
+            "objective": objective,
+            "steps": [
+                {
+                    "id": "step-1",
+                    "title": "Create PDF document",
+                    "description": "Generate a formatted PDF document using local ReportLab engine.",
+                    "tool": "pdf_writer",
+                    "dependencies": [],
+                    "inputs": {
+                        "file_path": file_path,
+                        "title": title,
+                        "content": content,
+                    },
+                    "expected_output": "PDF document created and verified.",
+                }
+            ],
+            "tools_required": ["pdf_writer"],
+            "expected_outputs": ["Created PDF document"],
+            "verification_required": True,
+        }
+
+    # ------------------------------------------------------------------
+    # XLSX WRITE PLAN
+    # ------------------------------------------------------------------
+
+    def _force_xlsx_write_plan(
+        self,
+        objective: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic Excel workbook plan."""
+        file_path = (
+            self._extract_workspace_path(objective)
+            or "output/excel_report.xlsx"
+        )
+        if not file_path.endswith(".xlsx"):
+            file_path = str(Path(file_path).with_suffix(".xlsx")).replace("\\", "/")
+
+        title = self._extract_document_title(objective, file_path)
+        content = self._generate_document_content(objective, file_path, title)
+
+        return {
+            "objective": objective,
+            "steps": [
+                {
+                    "id": "step-1",
+                    "title": "Create Excel workbook",
+                    "description": "Generate a styled Excel workbook with formatted headers and data.",
+                    "tool": "spreadsheet_writer",
+                    "dependencies": [],
+                    "inputs": {
+                        "file_path": file_path,
+                        "title": title,
+                        "content": content,
+                    },
+                    "expected_output": "Excel workbook created and verified.",
+                }
+            ],
+            "tools_required": ["spreadsheet_writer"],
+            "expected_outputs": ["Created XLSX workbook"],
+            "verification_required": True,
+        }
+
+    # ------------------------------------------------------------------
+    # CSV WRITE PLAN
+    # ------------------------------------------------------------------
+
+    def _force_csv_write_plan(
+        self,
+        objective: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic CSV generation plan."""
+        file_path = (
+            self._extract_workspace_path(objective)
+            or "output/dataset.csv"
+        )
+        if not file_path.endswith(".csv"):
+            file_path = str(Path(file_path).with_suffix(".csv")).replace("\\", "/")
+
+        content = self._generate_file_content(objective, file_path)
+
+        return {
+            "objective": objective,
+            "steps": [
+                {
+                    "id": "step-1",
+                    "title": "Create CSV file",
+                    "description": "Generate a clean CSV dataset file in the workspace.",
+                    "tool": "csv_writer",
+                    "dependencies": [],
+                    "inputs": {
+                        "file_path": file_path,
+                        "content": content,
+                    },
+                    "expected_output": "CSV file created and verified.",
+                }
+            ],
+            "tools_required": ["csv_writer"],
+            "expected_outputs": ["Created CSV file"],
+            "verification_required": True,
+        }
+
+    # ------------------------------------------------------------------
+    # PPTX WRITE PLAN
+    # ------------------------------------------------------------------
+
+    def _force_pptx_write_plan(
+        self,
+        objective: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic PowerPoint presentation plan."""
+        file_path = (
+            self._extract_workspace_path(objective)
+            or "output/presentation.pptx"
+        )
+        if not file_path.endswith(".pptx"):
+            file_path = str(Path(file_path).with_suffix(".pptx")).replace("\\", "/")
+
+        title = self._extract_document_title(objective, file_path)
+        content = self._generate_document_content(objective, file_path, title)
+
+        return {
+            "objective": objective,
+            "steps": [
+                {
+                    "id": "step-1",
+                    "title": "Create PowerPoint deck",
+                    "description": "Generate a styled PPTX presentation in NOVA dark theme.",
+                    "tool": "pptx_writer",
+                    "dependencies": [],
+                    "inputs": {
+                        "file_path": file_path,
+                        "title": title,
+                        "content": content,
+                    },
+                    "expected_output": "PPTX presentation created and verified.",
+                }
+            ],
+            "tools_required": ["pptx_writer"],
+            "expected_outputs": ["Created PPTX presentation"],
+            "verification_required": True,
+        }
+
+    # ------------------------------------------------------------------
+    # VISUALIZATION PLAN
+    # ------------------------------------------------------------------
+
+    def _force_visualization_plan(
+        self,
+        objective: str,
+    ) -> Dict[str, Any]:
+        """Build a deterministic data visualization plan."""
+        file_path = (
+            self._extract_workspace_path(objective)
+            or "output/data_chart.png"
+        )
+        if not file_path.endswith((".png", ".jpg", ".jpeg")):
+            file_path = str(Path(file_path).with_suffix(".png")).replace("\\", "/")
+
+        chart_type = "bar"
+        obj_lower = objective.lower()
+        if "line" in obj_lower or "trend" in obj_lower:
+            chart_type = "line"
+        elif "pie" in obj_lower or "donut" in obj_lower:
+            chart_type = "pie"
+        elif "scatter" in obj_lower:
+            chart_type = "scatter"
+
+        title = self._extract_document_title(objective, file_path)
+
+        return {
+            "objective": objective,
+            "steps": [
+                {
+                    "id": "step-1",
+                    "title": "Generate data visualization",
+                    "description": "Render a high-resolution chart PNG using local Matplotlib engine.",
+                    "tool": "visualization_writer",
+                    "dependencies": [],
+                    "inputs": {
+                        "file_path": file_path,
+                        "title": title,
+                        "chart_type": chart_type,
+                    },
+                    "expected_output": "Chart PNG generated and verified.",
+                }
+            ],
+            "tools_required": ["visualization_writer"],
+            "expected_outputs": ["Created chart image"],
+            "verification_required": True,
+        }
+
+    # ------------------------------------------------------------------
     # LOCAL PYTHON GENERATION
     # ------------------------------------------------------------------
 
@@ -2132,6 +2445,46 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # PDF DOCUMENT WRITING
+        # --------------------------------------------------------------
+
+        if self._is_pdf_write_intent(objective):
+            raw_plan = self._force_pdf_write_plan(objective)
+            return self._normalize_plan(objective, raw_plan)
+
+        # --------------------------------------------------------------
+        # XLSX SPREADSHEET WRITING
+        # --------------------------------------------------------------
+
+        if self._is_xlsx_write_intent(objective):
+            raw_plan = self._force_xlsx_write_plan(objective)
+            return self._normalize_plan(objective, raw_plan)
+
+        # --------------------------------------------------------------
+        # CSV FILE WRITING
+        # --------------------------------------------------------------
+
+        if self._is_csv_write_intent(objective):
+            raw_plan = self._force_csv_write_plan(objective)
+            return self._normalize_plan(objective, raw_plan)
+
+        # --------------------------------------------------------------
+        # PPTX PRESENTATION WRITING
+        # --------------------------------------------------------------
+
+        if self._is_pptx_write_intent(objective):
+            raw_plan = self._force_pptx_write_plan(objective)
+            return self._normalize_plan(objective, raw_plan)
+
+        # --------------------------------------------------------------
+        # VISUALIZATION / CHART GENERATION
+        # --------------------------------------------------------------
+
+        if self._is_visualization_intent(objective):
+            raw_plan = self._force_visualization_plan(objective)
+            return self._normalize_plan(objective, raw_plan)
 
         # --------------------------------------------------------------
         # DOCX DOCUMENT WRITING

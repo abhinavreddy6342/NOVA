@@ -3,13 +3,18 @@ from typing import Callable, Dict, List, Optional
 
 from app.agents.tools.handlers import (
     code_executor_handler,
+    csv_writer_handler,
     document_reader_handler,
     document_writer_handler,
     file_reader_handler,
     file_writer_handler,
     knowledge_search_handler,
+    pdf_writer_handler,
+    pptx_writer_handler,
     spreadsheet_analysis_handler,
     spreadsheet_reader_handler,
+    spreadsheet_writer_handler,
+    visualization_writer_handler,
 )
 
 
@@ -337,6 +342,121 @@ tool_registry.register(
             "file_path": "string",
         },
         handler=spreadsheet_analysis_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# PDF WRITER
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="pdf_writer",
+        description=(
+            "Create a formatted PDF document from "
+            "locally generated content and optional charts, "
+            "saving it inside the NOVA workspace."
+        ),
+        category="document",
+        requires_confirmation=True,
+        input_schema={
+            "file_path": "string",
+            "title": "string",
+            "content": "string",
+        },
+        handler=pdf_writer_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# SPREADSHEET WRITER (XLSX)
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="spreadsheet_writer",
+        description=(
+            "Create a styled Excel workbook (.xlsx) with headers, "
+            "data tables, and formatting inside the NOVA workspace."
+        ),
+        category="spreadsheet",
+        requires_confirmation=True,
+        input_schema={
+            "file_path": "string",
+            "title": "string",
+            "content": "string",
+        },
+        handler=spreadsheet_writer_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# CSV WRITER
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="csv_writer",
+        description=(
+            "Create a clean CSV dataset or output file inside "
+            "the NOVA workspace."
+        ),
+        category="spreadsheet",
+        requires_confirmation=True,
+        input_schema={
+            "file_path": "string",
+            "content": "string",
+        },
+        handler=csv_writer_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# PPTX WRITER (POWERPOINT)
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="pptx_writer",
+        description=(
+            "Create a PowerPoint presentation deck (.pptx) "
+            "with styled slides inside the NOVA workspace."
+        ),
+        category="document",
+        requires_confirmation=True,
+        input_schema={
+            "file_path": "string",
+            "title": "string",
+            "content": "string",
+        },
+        handler=pptx_writer_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# VISUALIZATION WRITER (CHARTS)
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="visualization_writer",
+        description=(
+            "Generate local chart PNG visualizations (bar, line, "
+            "pie, scatter) from analyzed data and save to NOVA workspace."
+        ),
+        category="visualization",
+        requires_confirmation=False,
+        input_schema={
+            "file_path": "string",
+            "title": "string",
+            "chart_type": "string",
+        },
+        handler=visualization_writer_handler,
     )
 )
 
