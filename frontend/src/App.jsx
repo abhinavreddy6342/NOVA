@@ -1,17 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  AnimatePresence,
-  motion,
-} from "framer-motion";
-import {
-  Command,
-  Search,
-  X,
-} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Command, Search, X } from "lucide-react";
 
 import Sidebar from "./components/layout/Sidebar";
 import Topbar from "./components/layout/Topbar";
 import CommandCenter from "./components/dashboard/CommandCenter";
+import Missions from "./components/dashboard/Missions";
 import ChatWindow from "./components/chat/ChatWindow";
 import KnowledgeVault from "./components/knowledge/KnowledgeVault";
 import VoiceController from "./components/voice/VoiceController";
@@ -28,10 +22,6 @@ const pages = {
   audit: "Audit Trail",
   analytics: "Analytics",
 };
-
-/* =========================================================
-   PLACEHOLDER PAGE
-   ========================================================= */
 
 function PlaceholderPage({ page, onBack }) {
   return (
@@ -80,14 +70,7 @@ function PlaceholderPage({ page, onBack }) {
   );
 }
 
-/* =========================================================
-   COMMAND PALETTE
-   ========================================================= */
-
-function CommandPalette({
-  onClose,
-  onNavigate,
-}) {
+function CommandPalette({ onClose, onNavigate }) {
   const commands = [
     ["command", "Open Command Center"],
     ["chat", "Open Local Chat"],
@@ -163,42 +146,26 @@ function CommandPalette({
   );
 }
 
-/* =========================================================
-   APP
-   ========================================================= */
-
 function App() {
   const [activePage, setActivePage] =
     useState("command");
 
-  const [
-    mobileSidebar,
-    setMobileSidebar,
-  ] = useState(false);
+  const [mobileSidebar, setMobileSidebar] =
+    useState(false);
 
-  const [
-    commandOpen,
-    setCommandOpen,
-  ] = useState(false);
+  const [commandOpen, setCommandOpen] =
+    useState(false);
 
-  const [
-    conversations,
-    setConversations,
-  ] = useState([]);
+  const [conversations, setConversations] =
+    useState([]);
 
   const [
     activeConversationId,
     setActiveConversationId,
   ] = useState(null);
 
-  const [
-    historyLoading,
-    setHistoryLoading,
-  ] = useState(false);
-
-  /* =======================================================
-     LOAD CONVERSATIONS
-     ======================================================= */
+  const [historyLoading, setHistoryLoading] =
+    useState(false);
 
   const loadConversations =
     useCallback(async () => {
@@ -238,42 +205,21 @@ function App() {
       }
     }, []);
 
-  /* =======================================================
-     INITIAL HISTORY LOAD
-     ======================================================= */
-
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
-  /* =======================================================
-     NAVIGATION
-     ======================================================= */
-
   const navigate = (page) => {
     setActivePage(page);
     setMobileSidebar(false);
-
-    /*
-     * Command palette closes whenever a
-     * navigation action occurs.
-     */
     setCommandOpen(false);
   };
-
-  /* =======================================================
-     NEW CONVERSATION
-     ======================================================= */
 
   const handleNewConversation = () => {
     setActiveConversationId(null);
     setActivePage("chat");
     setMobileSidebar(false);
   };
-
-  /* =======================================================
-     SELECT SAVED CONVERSATION
-     ======================================================= */
 
   const handleSelectConversation = (
     conversationId
@@ -286,18 +232,9 @@ function App() {
       conversationId
     );
 
-    /*
-     * This is important:
-     * selecting a saved conversation must
-     * always open the Local Chat page.
-     */
     setActivePage("chat");
     setMobileSidebar(false);
   };
-
-  /* =======================================================
-     CONVERSATION ID CREATED BY BACKEND
-     ======================================================= */
 
   const handleConversationChange = (
     conversationId
@@ -310,17 +247,8 @@ function App() {
       conversationId
     );
 
-    /*
-     * When the backend creates the first
-     * conversation, immediately keep the user
-     * inside Local Chat.
-     */
     setActivePage("chat");
   };
-
-  /* =======================================================
-     DELETE CONVERSATION
-     ======================================================= */
 
   const handleDeleteConversation =
     async (conversationId) => {
@@ -368,16 +296,12 @@ function App() {
               data?.detail ||
               message;
           } catch {
-            // Keep the default message.
+            // Keep default message.
           }
 
           throw new Error(message);
         }
 
-        /*
-         * Remove immediately from the
-         * current sidebar state.
-         */
         setConversations(
           (current) =>
             current.filter(
@@ -387,10 +311,6 @@ function App() {
             )
         );
 
-        /*
-         * If the deleted conversation was
-         * currently open, return to a fresh chat.
-         */
         if (
           String(activeConversationId) ===
           String(conversationId)
@@ -411,10 +331,6 @@ function App() {
       }
     };
 
-  /* =======================================================
-     RENDER
-     ======================================================= */
-
   return (
     <div className="nova-app">
       <div className="background-grid" />
@@ -423,20 +339,13 @@ function App() {
 
       <div className="background-glow glow-two" />
 
-      {/* Global NOVA voice runtime */}
       <VoiceController />
-
-      {/* ===================================================
-          SIDEBAR
-         =================================================== */}
 
       <Sidebar
         activePage={activePage}
         onNavigate={navigate}
         mobileOpen={mobileSidebar}
-        conversations={
-          conversations
-        }
+        conversations={conversations}
         activeConversationId={
           activeConversationId
         }
@@ -451,10 +360,6 @@ function App() {
         }
       />
 
-      {/* ===================================================
-          MOBILE SIDEBAR BACKDROP
-         =================================================== */}
-
       {mobileSidebar && (
         <button
           className="mobile-backdrop"
@@ -465,10 +370,6 @@ function App() {
           aria-label="Close sidebar"
         />
       )}
-
-      {/* ===================================================
-          MAIN AREA
-         =================================================== */}
 
       <div className="nova-main">
         <Topbar
@@ -484,10 +385,6 @@ function App() {
         />
 
         <AnimatePresence mode="wait">
-          {/* =================================================
-              COMMAND CENTER
-             ================================================= */}
-
           {activePage === "command" ? (
             <motion.div
               key="command"
@@ -506,10 +403,6 @@ function App() {
               />
             </motion.div>
           ) : activePage === "chat" ? (
-            /* =================================================
-               LOCAL CHAT
-               ================================================= */
-
             <motion.div
               key={`chat-${
                 activeConversationId ||
@@ -547,12 +440,31 @@ function App() {
                 }
               />
             </motion.div>
-          ) : activePage ===
-            "knowledge" ? (
-            /* =================================================
-               KNOWLEDGE VAULT
-               ================================================= */
-
+          ) : activePage === "missions" ? (
+            <motion.div
+              key="missions"
+              initial={{
+                opacity: 0,
+                y: 16,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <Missions
+                onNavigate={navigate}
+              />
+            </motion.div>
+          ) : activePage === "knowledge" ? (
             <motion.div
               key="knowledge"
               initial={{
@@ -575,10 +487,6 @@ function App() {
               <KnowledgeVault />
             </motion.div>
           ) : (
-            /* =================================================
-               PLACEHOLDER MODULES
-               ================================================= */
-
             <PlaceholderPage
               key={activePage}
               page={activePage}
@@ -590,10 +498,6 @@ function App() {
         </AnimatePresence>
       </div>
 
-      {/* =====================================================
-          COMMAND PALETTE
-         ===================================================== */}
-
       <AnimatePresence>
         {commandOpen && (
           <CommandPalette
@@ -604,10 +508,6 @@ function App() {
           />
         )}
       </AnimatePresence>
-
-      {/* =====================================================
-          HISTORY SYNC INDICATOR
-         ===================================================== */}
 
       {historyLoading && (
         <div

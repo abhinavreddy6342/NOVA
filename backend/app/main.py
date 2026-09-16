@@ -10,7 +10,7 @@ from app.api.knowledge_search import (
 )
 from app.api.agents.routes import router as agents_router
 
-from app.core.database import Base, engine
+from app.core.database import init_db
 from app.core import models
 
 
@@ -18,9 +18,8 @@ from app.core import models
 # DATABASE INITIALIZATION
 # =========================================
 
-Base.metadata.create_all(
-    bind=engine
-)
+init_db()
+
 
 
 # =========================================

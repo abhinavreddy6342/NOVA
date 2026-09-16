@@ -4879,6 +4879,7 @@ h3,
   margin-top: 22px;
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   flex-shrink: 1;
 }
@@ -4901,7 +4902,7 @@ h3,
   min-height: 0;
   flex-shrink: 1;
 
-  max-height: 170px;
+  max-height: none;
 
   overflow-x: hidden;
   overflow-y: auto;
@@ -5100,7 +5101,7 @@ h3,
   }
 
   .recent-chat-list {
-    max-height: 150px;
+    max-height: none;
   }
 }
 
@@ -5114,7 +5115,7 @@ h3,
   }
 
   .recent-chat-list {
-    max-height: 120px;
+    max-height: none;
   }
 }
 

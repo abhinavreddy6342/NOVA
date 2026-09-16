@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from uuid import uuid4
 
@@ -71,13 +72,22 @@ def add_message(
     role: str,
     content: str,
     model: str | None = None,
+    agent_data: dict | None = None,
 ) -> ChatMessage:
+    serialized_agent_data = None
+    if agent_data is not None:
+        try:
+            serialized_agent_data = json.dumps(agent_data)
+        except Exception:
+            serialized_agent_data = None
+
     message = ChatMessage(
         id=str(uuid4()),
         conversation_id=conversation.id,
         role=role,
         content=content,
         model=model,
+        agent_data=serialized_agent_data,
     )
 
     db.add(message)
@@ -97,6 +107,7 @@ def add_message(
     db.refresh(conversation)
 
     return message
+
 
 
 def add_attachment(

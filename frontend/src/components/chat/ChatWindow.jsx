@@ -26,6 +26,18 @@ const API_URL = "http://127.0.0.1:8001";
 
 const MODEL = "llama3.2:latest";
 
+/*
+ * Decorative icon props.
+ *
+ * Explicitly marking Lucide SVGs as hidden from the accessibility
+ * tree prevents raw "svg" labels from leaking into copied/read
+ * text or accessibility output while keeping the icons visible.
+ */
+const ICON_PROPS = {
+  "aria-hidden": true,
+  focusable: false,
+};
+
 const welcomeMessage = {
   id: "nova-welcome",
   role: "assistant",
@@ -50,27 +62,144 @@ function createId(prefix = "msg") {
 
 function getFileIcon(fileType = "") {
   if (fileType.startsWith("image/")) {
-    return <ImageIcon size={14} />;
+    return (
+      <ImageIcon
+        size={14}
+        {...ICON_PROPS}
+      />
+    );
   }
 
-  return <FileText size={14} />;
+  return (
+    <FileText
+      size={14}
+      {...ICON_PROPS}
+    />
+  );
 }
 
 function mapHistoryMessage(message) {
+  let agentObj = null;
+
+  if (message.agent && typeof message.agent === "object") {
+    const rawArtifacts = Array.isArray(message.agent.artifacts)
+      ? message.agent.artifacts
+      : [];
+
+    const artifacts = rawArtifacts
+      .filter((art) => {
+        const filePath = String(
+          art.file_path || art.filePath || ""
+        )
+          .replace(/\\/g, "/")
+          .replace(/^\/+/, "");
+
+        if (!filePath) return false;
+
+        const normalized = filePath.toLowerCase();
+
+        if (
+          normalized.startsWith("input/") ||
+          normalized.startsWith("workspace/input/") ||
+          normalized.includes("/input/")
+        ) {
+          return false;
+        }
+
+        return (
+          normalized.startsWith("output/") ||
+          normalized.startsWith("workspace/output/")
+        );
+      })
+      .map((art, index) => {
+        const filePath = String(
+          art.file_path || art.filePath || ""
+        )
+          .replace(/\\/g, "/")
+          .replace(/^\/+/, "");
+
+        const fileName =
+          art.file_name ||
+          art.fileName ||
+          (filePath
+            ? filePath.split("/").pop()
+            : `artifact-${index}`);
+
+        const extension =
+          art.extension ||
+          (fileName.includes(".")
+            ? `.${fileName.split(".").pop()}`
+            : "");
+
+        const sizeBytes =
+          typeof art.size_bytes === "number"
+            ? art.size_bytes
+            : typeof art.sizeBytes === "number"
+            ? art.sizeBytes
+            : null;
+
+        const isAvailable =
+          art.available !== false;
+
+        return {
+          stepId:
+            art.step_id ||
+            art.stepId ||
+            `step-${index}`,
+
+          filePath,
+
+          fileName,
+
+          extension,
+
+          sizeBytes,
+
+          verificationStatus:
+            art.verification_status ||
+            art.verificationStatus ||
+            "verified",
+
+          downloadUrl: isAvailable
+            ? getDownloadUrl(filePath)
+            : null,
+
+          available: isAvailable,
+        };
+      });
+
+    agentObj = {
+      plan: message.agent.plan || null,
+
+      execution:
+        message.agent.execution || null,
+
+      artifacts,
+    };
+  }
+
   return {
     id: message.id,
+
     role: message.role,
+
     content: message.content,
+
     time: new Date(message.created_at),
+
     attachments: (message.attachments || []).map(
       (attachment) => ({
         name: attachment.filename,
+
         size: 0,
+
         type: attachment.content_type || "",
+
         file_id: attachment.file_id,
       })
     ),
-    agent: null,
+
+    agent: agentObj,
   };
 }
 
@@ -93,18 +222,123 @@ function emitAvatarState(state, audioLevel = 0) {
  * Check whether a browser file is a spreadsheet.
  */
 function isSpreadsheetFile(file) {
-  if (!file?.name) {
+  if (!file?.name && !file?.extension) {
     return false;
   }
 
-  const extension = file.name
-    .split(".")
-    .pop()
-    ?.toLowerCase();
+  const extension =
+    file.extension ||
+    file.name
+      ?.split(".")
+      .pop()
+      ?.toLowerCase();
 
   return (
     extension === "xlsx" ||
-    extension === "csv"
+    extension === ".xlsx" ||
+    extension === "csv" ||
+    extension === ".csv"
+  );
+}
+
+/*
+ * Detect PowerPoint / presentation generation requests.
+ *
+ * Handles natural phrasing such as:
+ *
+ * Create a professional PowerPoint presentation
+ * Generate a presentation about AI
+ * Make a slide deck about industrial automation
+ * Prepare slides for a project
+ * Build a PPTX presentation
+ */
+function isPresentationGenerationRequest(message) {
+  const text = String(message || "")
+    .toLowerCase()
+    .trim();
+
+  if (!text) {
+    return false;
+  }
+
+  const explicitSignals = [
+    "create a powerpoint",
+    "create powerpoint",
+    "generate a powerpoint",
+    "generate powerpoint",
+    "make a powerpoint",
+    "make powerpoint",
+    "prepare a powerpoint",
+    "prepare powerpoint",
+    "write a powerpoint",
+    "write powerpoint",
+    "build a powerpoint",
+    "build powerpoint",
+
+    "create a presentation",
+    "create presentation",
+    "generate a presentation",
+    "generate presentation",
+    "make a presentation",
+    "make presentation",
+    "prepare a presentation",
+    "prepare presentation",
+    "build a presentation",
+    "build presentation",
+    "write a presentation",
+    "write presentation",
+
+    "create a pptx",
+    "generate a pptx",
+    "make a pptx",
+    "prepare a pptx",
+    "build a pptx",
+
+    "create a slide deck",
+    "create slide deck",
+    "generate a slide deck",
+    "generate slide deck",
+    "make a slide deck",
+    "make slide deck",
+    "prepare a slide deck",
+    "prepare slide deck",
+    "build a slide deck",
+
+    "create slides",
+    "generate slides",
+    "make slides",
+    "prepare slides",
+    "build slides",
+
+    "create powerpoint presentation",
+    "generate powerpoint presentation",
+    "make powerpoint presentation",
+    "prepare powerpoint presentation",
+    "build powerpoint presentation",
+  ];
+
+  const naturalPresentationPattern =
+    /\b(create|generate|make|prepare|write|produce|build|design|draft)\b[\s\S]{0,180}\b(powerpoint|presentation|pptx|slide deck|slides)\b/i;
+
+  const presentationTopicPattern =
+    /\b(powerpoint|presentation|pptx|slide deck|slides)\b[\s\S]{0,120}\b(about|on|for|regarding)\b/i;
+
+  const presentationFilePattern =
+    /\b(powerpoint|presentation|pptx|slide deck|slides)\b/i;
+
+  const actionPattern =
+    /\b(create|generate|make|prepare|write|produce|build|design|draft)\b/i;
+
+  return (
+    explicitSignals.some((signal) =>
+      text.includes(signal)
+    ) ||
+    naturalPresentationPattern.test(text) ||
+    presentationTopicPattern.test(text) ||
+    (
+      presentationFilePattern.test(text) &&
+      actionPattern.test(text)
+    )
   );
 }
 
@@ -118,7 +352,6 @@ function isAgentRequest(message) {
   const text = message.toLowerCase().trim();
 
   const agentSignals = [
-    // Knowledge / retrieval
     "local knowledge",
     "knowledge base",
     "knowledge vault",
@@ -131,13 +364,11 @@ function isAgentRequest(message) {
     "retrieve from",
     "search the local",
 
-    // File/document understanding
     "analyze the document",
     "analyse the document",
     "analyze the file",
     "analyse the file",
 
-    // Planning / agentic execution
     "create a plan",
     "make a plan",
     "plan this task",
@@ -151,7 +382,6 @@ function isAgentRequest(message) {
     "investigate",
     "root cause",
 
-    // Explicit Python/code execution
     "execute python",
     "run python",
     "using python",
@@ -172,7 +402,6 @@ function isAgentRequest(message) {
     "execute this python",
     "code execution",
 
-    // Calculation / computational requests
     "calculate ",
     "calculate\t",
     "compute ",
@@ -189,7 +418,6 @@ function isAgentRequest(message) {
     "calculate the maximum",
     "calculate the minimum",
 
-    // Spreadsheet / Excel / CSV
     "spreadsheet",
     "excel",
     "excel file",
@@ -220,7 +448,6 @@ function isAgentRequest(message) {
     "analyze sales",
     "analyse sales",
 
-    // Explicit DOCX / Word generation
     "create a docx",
     "create docx",
     "generate a docx",
@@ -241,27 +468,64 @@ function isAgentRequest(message) {
     "make a word document",
     ".docx",
 
-    // PDF
     "create a pdf",
     "generate a pdf",
     "write a pdf",
     ".pdf",
 
-    // Excel generation
     "create an excel",
     "create excel",
     "generate an excel",
     "generate excel",
     ".xlsx",
 
-    // PowerPoint
     "create a powerpoint",
     "create powerpoint",
     "generate a powerpoint",
     "generate powerpoint",
+    "make a powerpoint",
+    "make powerpoint",
+    "prepare a powerpoint",
+    "prepare powerpoint",
+    "write a powerpoint",
+    "write powerpoint",
+    "build a powerpoint",
+    "build powerpoint",
+    "create a pptx",
+    "generate a pptx",
+    "make a pptx",
     ".pptx",
 
-    // Visualization / Charts
+    "create a presentation",
+    "create presentation",
+    "generate a presentation",
+    "generate presentation",
+    "make a presentation",
+    "make presentation",
+    "prepare a presentation",
+    "prepare presentation",
+    "build a presentation",
+    "build presentation",
+    "write a presentation",
+    "write presentation",
+
+    "create a slide deck",
+    "create slide deck",
+    "generate a slide deck",
+    "generate slide deck",
+    "make a slide deck",
+    "make slide deck",
+    "prepare a slide deck",
+    "prepare slide deck",
+    "build a slide deck",
+    "build slide deck",
+
+    "create slides",
+    "generate slides",
+    "make slides",
+    "prepare slides",
+    "build slides",
+
     "create a chart",
     "create chart",
     "generate a chart",
@@ -275,7 +539,6 @@ function isAgentRequest(message) {
     "visualize",
     "visualise",
 
-    // Plain file generation
     "create a file",
     "create file",
     "generate a file",
@@ -286,27 +549,15 @@ function isAgentRequest(message) {
     "save it to",
   ];
 
-  /*
-   * Natural-language document generation.
-   */
   const naturalDocumentPattern =
     /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|document about|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
 
-  /*
-   * Natural-language computational requests.
-   */
   const naturalComputationPattern =
     /\b(calculate|compute|solve|evaluate|find)\b[\s\S]{0,120}\b(factorial|fibonacci|equation|average|sum|total|maximum|minimum|percentage|prime|power|square|cube|using python|with python|in python)\b/i;
 
-  /*
-   * Natural-language spreadsheet requests.
-   */
   const naturalSpreadsheetPattern =
     /\b(analyze|analyse|inspect|read|review|summarize|summarise|calculate|compute|find|compare|identify|show)\b[\s\S]{0,120}\b(spreadsheet|excel|workbook|worksheet|csv|xlsx|xls|sales data|sales sheet|sales file|table)\b/i;
 
-  /*
-   * Natural-language visualization requests.
-   */
   const naturalChartPattern =
     /\b(create|generate|make|draw|plot|show)\b[\s\S]{0,120}\b(chart|graph|plot|bar chart|line chart|pie chart|scatter plot|visual summary|visualization)\b/i;
 
@@ -317,7 +568,8 @@ function isAgentRequest(message) {
     naturalDocumentPattern.test(text) ||
     naturalComputationPattern.test(text) ||
     naturalSpreadsheetPattern.test(text) ||
-    naturalChartPattern.test(text)
+    naturalChartPattern.test(text) ||
+    isPresentationGenerationRequest(text)
   );
 }
 
@@ -462,6 +714,7 @@ function getStepStatusIcon(status) {
     return (
       <CheckCircle2
         size={13}
+        {...ICON_PROPS}
       />
     );
   }
@@ -473,6 +726,7 @@ function getStepStatusIcon(status) {
     return (
       <AlertCircle
         size={13}
+        {...ICON_PROPS}
       />
     );
   }
@@ -480,6 +734,7 @@ function getStepStatusIcon(status) {
   return (
     <Activity
       size={13}
+      {...ICON_PROPS}
     />
   );
 }
@@ -504,6 +759,10 @@ function getWorkflowTitle(
       (step) =>
         step.tool ===
           "document_writer" ||
+        step.tool ===
+          "pdf_writer" ||
+        step.tool ===
+          "pptx_writer" ||
         step.title
           ?.toLowerCase()
           .includes(
@@ -526,7 +785,9 @@ function getWorkflowTitle(
         artifact.extension ===
           ".txt" ||
         artifact.extension ===
-          ".md"
+          ".md" ||
+        artifact.extension ===
+          ".pptx"
     );
 
   if (
@@ -684,6 +945,33 @@ function getDownloadUrl(filePath) {
     return null;
   }
 
+  if (
+    normalizedPath
+      .toLowerCase()
+      .startsWith("input/")
+  ) {
+    return null;
+  }
+
+  if (
+    normalizedPath
+      .toLowerCase()
+      .startsWith("workspace/input/")
+  ) {
+    return null;
+  }
+
+  if (
+    !normalizedPath
+      .toLowerCase()
+      .startsWith("output/") &&
+    !normalizedPath
+      .toLowerCase()
+      .startsWith("workspace/output/")
+  ) {
+    return null;
+  }
+
   const pathParts = normalizedPath
     .split("/")
     .filter(Boolean)
@@ -722,10 +1010,27 @@ function getAgentArtifacts(
 
       const filePath = String(
         result.file_path
-      ).replace(
-        /\\/g,
-        "/"
-      );
+      )
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "");
+
+      const normalized =
+        filePath.toLowerCase();
+
+      if (
+        normalized.startsWith("input/") ||
+        normalized.startsWith("workspace/input/") ||
+        normalized.includes("/input/")
+      ) {
+        return;
+      }
+
+      if (
+        !normalized.startsWith("output/") &&
+        !normalized.startsWith("workspace/output/")
+      ) {
+        return;
+      }
 
       const fileName =
         result.file_name ||
@@ -736,24 +1041,37 @@ function getAgentArtifacts(
 
       const extension =
         result.extension ||
-        `.${fileName
-          .split(".")
-          .pop()}`;
+        (
+          fileName.includes(".")
+            ? `.${fileName.split(".").pop()}`
+            : ""
+        );
+
+      const downloadUrl =
+        getDownloadUrl(
+          filePath
+        );
+
+      if (!downloadUrl) {
+        return;
+      }
 
       artifacts.push({
         stepId,
+
         filePath,
+
         fileName,
+
         extension,
+
         sizeBytes:
           typeof result.size_bytes ===
           "number"
             ? result.size_bytes
             : null,
-        downloadUrl:
-          getDownloadUrl(
-            filePath
-          ),
+
+        downloadUrl,
       });
     }
   );
@@ -1059,6 +1377,7 @@ export default function ChatWindow({
           ]);
 
           setStatus("IDLE");
+
           setError("");
 
           emitAvatarState(
@@ -1335,18 +1654,22 @@ export default function ChatWindow({
         uploaded.push({
           file_id:
             data.file.file_id,
+
           filename:
             data.file.filename,
+
           content_type:
             data.file
               .content_type ||
             file.type,
+
           extension:
             data.file.extension ||
             `.${file.name
               .split(".")
               .pop()
               ?.toLowerCase()}`,
+
           file_type:
             data.file.file_type ||
             "",
@@ -1358,9 +1681,6 @@ export default function ChatWindow({
 
   /*
    * Run NOVA's agent endpoint.
-   *
-   * Attachments are provided through context so the backend
-   * can stage local spreadsheet files into NOVA's workspace.
    */
   const runAgent = async (
     message,
@@ -1382,8 +1702,18 @@ export default function ChatWindow({
       ) ||
       uploadedFiles.some(
         (file) =>
-          file.extension === ".xlsx" ||
-          file.extension === ".csv"
+          isSpreadsheetFile(
+            file
+          )
+      );
+
+    /*
+     * PowerPoint generation must also auto-confirm because
+     * pptx_writer is registered as a confirmation-gated tool.
+     */
+    const directPresentationGeneration =
+      isPresentationGenerationRequest(
+        message
       );
 
     const response =
@@ -1417,7 +1747,8 @@ export default function ChatWindow({
             auto_confirm:
               directDocumentGeneration ||
               directCodeExecution ||
-              directSpreadsheetAnalysis,
+              directSpreadsheetAnalysis ||
+              directPresentationGeneration,
           }),
         }
       );
@@ -1499,11 +1830,6 @@ export default function ChatWindow({
 
       setIsSending(true);
 
-      /*
-       * Determine whether the selected files contain
-       * spreadsheets. Spreadsheet attachments use the
-       * agent pipeline.
-       */
       const useAgent =
         selectedFiles.length > 0 ||
         isAgentRequest(message);
@@ -1583,13 +1909,6 @@ export default function ChatWindow({
             "ANALYZING"
           );
 
-          /*
-           * Upload spreadsheet attachment first.
-           *
-           * The backend needs the returned file_id in order
-           * to stage the uploaded spreadsheet into its
-           * controlled workspace.
-           */
           const uploadedFiles =
             selectedFiles.length
               ? await uploadSelectedFiles()
@@ -1598,6 +1917,14 @@ export default function ChatWindow({
           setStatus(
             "PLANNING"
           );
+
+          const hasSpreadsheetAttachment =
+            uploadedFiles.some(
+              (file) =>
+                isSpreadsheetFile(
+                  file
+                )
+            );
 
           const agentMessage =
             message ||
@@ -1613,10 +1940,6 @@ export default function ChatWindow({
               uploadedFiles
             );
 
-          /*
-           * The backend creates/reuses the conversation.
-           * Keep the frontend attached to the returned ID.
-           */
           if (
             agentData.conversation_id &&
             agentData.conversation_id !==
@@ -1627,9 +1950,6 @@ export default function ChatWindow({
             );
           }
 
-          /*
-           * Refresh Recent Chats immediately.
-           */
           onConversationSaved();
 
           setStatus(
@@ -1639,6 +1959,141 @@ export default function ChatWindow({
           const assistantText =
             agentData.response ||
             "NOVA completed the agent workflow.";
+
+          const backendArtifacts =
+            Array.isArray(
+              agentData.artifacts
+            )
+              ? agentData.artifacts
+              : [];
+
+          const assistantArtifacts =
+            backendArtifacts
+              .filter(
+                (art) => {
+                  const filePath =
+                    String(
+                      art.file_path ||
+                        art.filePath ||
+                        ""
+                    )
+                      .replace(
+                        /\\/g,
+                        "/"
+                      )
+                      .replace(
+                        /^\/+/,
+                        ""
+                      );
+
+                  const normalized =
+                    filePath.toLowerCase();
+
+                  return (
+                    filePath &&
+                    !normalized.startsWith(
+                      "input/"
+                    ) &&
+                    !normalized.startsWith(
+                      "workspace/input/"
+                    ) &&
+                    !normalized.includes(
+                      "/input/"
+                    ) &&
+                    (
+                      normalized.startsWith(
+                        "output/"
+                      ) ||
+                      normalized.startsWith(
+                        "workspace/output/"
+                      )
+                    )
+                  );
+                }
+              )
+              .map(
+                (
+                  art,
+                  index
+                ) => {
+                  const filePath =
+                    String(
+                      art.file_path ||
+                        art.filePath ||
+                        ""
+                    )
+                      .replace(
+                        /\\/g,
+                        "/"
+                      )
+                      .replace(
+                        /^\/+/,
+                        ""
+                      );
+
+                  const fileName =
+                    art.file_name ||
+                    art.fileName ||
+                    (
+                      filePath
+                        ? filePath
+                            .split(
+                              "/"
+                            )
+                            .pop()
+                        : `artifact-${index}`
+                    );
+
+                  const extension =
+                    art.extension ||
+                    (
+                      fileName.includes(
+                        "."
+                      )
+                        ? `.${fileName.split(".").pop()}`
+                        : ""
+                    );
+
+                  return {
+                    stepId:
+                      art.step_id ||
+                      art.stepId ||
+                      `step-${index}`,
+
+                    filePath,
+
+                    fileName,
+
+                    extension,
+
+                    sizeBytes:
+                      typeof art.size_bytes ===
+                      "number"
+                        ? art.size_bytes
+                        : null,
+
+                    verificationStatus:
+                      art.verification_status ||
+                      art.verificationStatus ||
+                      "verified",
+
+                    downloadUrl:
+                      getDownloadUrl(
+                        filePath
+                      ),
+
+                    available:
+                      art.available !==
+                      false,
+                  };
+                }
+              )
+              .filter(
+                (artifact) =>
+                  Boolean(
+                    artifact.downloadUrl
+                  )
+              );
 
           const assistantMessage =
             {
@@ -1665,9 +2120,11 @@ export default function ChatWindow({
                   null,
 
                 artifacts:
-                  getAgentArtifacts(
-                    agentData.execution
-                  ),
+                  assistantArtifacts.length
+                    ? assistantArtifacts
+                    : getAgentArtifacts(
+                        agentData.execution
+                      ),
               },
             };
 
@@ -1911,7 +2368,6 @@ export default function ChatWindow({
       {/* =========================================================
           HERO
       ========================================================== */}
-
       <motion.section
         className="nova-chat-hero"
         initial={{
@@ -1958,6 +2414,7 @@ export default function ChatWindow({
             <span>
               <Sparkles
                 size={13}
+                {...ICON_PROPS}
               />
             </span>
 
@@ -1977,7 +2434,6 @@ export default function ChatWindow({
       {/* =========================================================
           RUNTIME STRIP
       ========================================================== */}
-
       <motion.section
         className="nova-chat-command-strip"
         initial={{
@@ -1994,7 +2450,10 @@ export default function ChatWindow({
         }}
       >
         <div className="nova-chat-command-item">
-          <Cpu size={15} />
+          <Cpu
+            size={15}
+            {...ICON_PROPS}
+          />
 
           <div>
             <small>
@@ -2010,6 +2469,7 @@ export default function ChatWindow({
         <div className="nova-chat-command-item">
           <LockKeyhole
             size={15}
+            {...ICON_PROPS}
           />
 
           <div>
@@ -2026,6 +2486,7 @@ export default function ChatWindow({
         <div className="nova-chat-command-item">
           <Activity
             size={15}
+            {...ICON_PROPS}
           />
 
           <div>
@@ -2042,6 +2503,7 @@ export default function ChatWindow({
         <div className="nova-chat-command-item">
           <BrainCircuit
             size={15}
+            {...ICON_PROPS}
           />
 
           <div>
@@ -2058,6 +2520,7 @@ export default function ChatWindow({
         <div className="nova-chat-command-item">
           <Sparkles
             size={15}
+            {...ICON_PROPS}
           />
 
           <div>
@@ -2081,7 +2544,6 @@ export default function ChatWindow({
       {/* =========================================================
           MAIN CHAT SHELL
       ========================================================== */}
-
       <motion.section
         className="nova-chat-shell"
         initial={{
@@ -2102,6 +2564,7 @@ export default function ChatWindow({
             <div className="nova-chat-session-icon">
               <MessageSquare
                 size={15}
+                {...ICON_PROPS}
               />
             </div>
 
@@ -2127,6 +2590,7 @@ export default function ChatWindow({
           >
             <RotateCcw
               size={13}
+              {...ICON_PROPS}
             />
 
             NEW CHAT
@@ -2229,10 +2693,6 @@ export default function ChatWindow({
                       )}
                     </div>
 
-                    {/* =================================================
-                        PREMIUM NOVA AGENT WORKFLOW
-                    ================================================== */}
-
                     {message.agent?.plan && (
                       <motion.div
                         className="nova-workflow-panel"
@@ -2254,6 +2714,7 @@ export default function ChatWindow({
                             <BrainCircuit
                               size={14}
                               className="nova-workflow-icon"
+                              {...ICON_PROPS}
                             />
 
                             <span>
@@ -2442,10 +2903,6 @@ export default function ChatWindow({
                           </div>
                         )}
 
-                        {/* =================================================
-                            GENERATED ARTIFACTS
-                        ================================================== */}
-
                         {message.agent.artifacts?.length >
                           0 && (
                           <div className="nova-agent-artifacts">
@@ -2471,6 +2928,7 @@ export default function ChatWindow({
                                     <div className="nova-agent-artifact-icon">
                                       <FileText
                                         size={15}
+                                        {...ICON_PROPS}
                                       />
                                     </div>
 
@@ -2494,7 +2952,8 @@ export default function ChatWindow({
                                       </small>
                                     </div>
 
-                                    {artifact.downloadUrl && (
+                                    {artifact.available !== false &&
+                                    artifact.downloadUrl ? (
                                       <a
                                         className="nova-agent-artifact-download"
                                         href={
@@ -2509,12 +2968,22 @@ export default function ChatWindow({
                                           size={
                                             14
                                           }
+                                          {...ICON_PROPS}
                                         />
 
                                         <span>
                                           DOWNLOAD
                                         </span>
                                       </a>
+                                    ) : (
+                                      <div
+                                        className="nova-agent-artifact-unavailable"
+                                        title="The generated file is no longer present in the local workspace."
+                                      >
+                                        <span>
+                                          ARTIFACT UNAVAILABLE
+                                        </span>
+                                      </div>
                                     )}
                                   </div>
                                 )
@@ -2651,6 +3120,7 @@ export default function ChatWindow({
                     >
                       <X
                         size={13}
+                        {...ICON_PROPS}
                       />
                     </button>
                   </div>
@@ -2673,6 +3143,7 @@ export default function ChatWindow({
             >
               <Paperclip
                 size={17}
+                {...ICON_PROPS}
               />
             </button>
 
@@ -2727,10 +3198,12 @@ export default function ChatWindow({
                 <LoaderCircle
                   size={18}
                   className="nova-spin"
+                  {...ICON_PROPS}
                 />
               ) : (
                 <ArrowUp
                   size={18}
+                  {...ICON_PROPS}
                 />
               )}
             </button>

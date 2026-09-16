@@ -1,0 +1,26 @@
+TASKFLOW — Test Account
+
+Name: Abhinav
+Email: abhinav@test.com
+Password: Test@123456
+
+Frontend:
+http://localhost:5173
+
+Backend:
+http://127.0.0.1:8000
+
+API Docs:
+http://127.0.0.1:8000/docs
+
+Title: Learn React
+
+Description: Complete React practice for today
+
+Status: TODO
+
+Priority: MEDIUM
+
+Name: Test Frontend
+Email: frontend@test.com
+Password: Test@123456

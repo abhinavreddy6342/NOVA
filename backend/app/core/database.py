@@ -29,10 +29,36 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+def init_db():
+    """
+    Initialize database tables and perform safe, idempotent migrations.
+    Guarantees existing data is never reset or deleted.
+    """
+    from sqlalchemy import text
+
+    Base.metadata.create_all(bind=engine)
+
+    with engine.connect() as conn:
+        try:
+            result = conn.execute(
+                text("PRAGMA table_info(chat_messages)")
+            ).fetchall()
+            columns = [row[1] for row in result]
+            if columns and "agent_data" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE chat_messages ADD COLUMN agent_data TEXT;"
+                    )
+                )
+                conn.commit()
+        except Exception as exc:
+            print(f"Idempotent migration notice: {exc}")
+
+
 def get_db():
     db = SessionLocal()
 
     try:
         yield db
     finally:
-        db.close()
+        db.close()

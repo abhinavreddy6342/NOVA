@@ -85,8 +85,7 @@ export default function Sidebar({
   onNewConversation,
   onDeleteConversation,
 }) {
-  const recentConversations =
-    conversations.slice(0, 8);
+  const recentConversations = conversations;
 
   return (
     <aside

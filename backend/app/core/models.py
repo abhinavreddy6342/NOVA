@@ -91,6 +91,11 @@ class ChatMessage(Base):
         nullable=True,
     )
 
+    agent_data = Column(
+        Text,
+        nullable=True,
+    )
+
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

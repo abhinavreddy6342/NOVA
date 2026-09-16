@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 from typing import Any, Dict, List, Optional
 
@@ -12,14 +13,18 @@ from app.agents.response.synthesizer import (
     agent_response_synthesizer,
 )
 from app.core.database import get_db
-from app.services.chat_files import (
-    load_chat_file,
-)
+from app.services.chat_files import load_chat_file
 from app.services.chat_history import (
     add_attachment,
     add_message,
     create_conversation,
     get_conversation,
+)
+from app.services.model_engine.model_router import (
+    route_request,
+)
+from app.services.model_engine.ollama_manager import (
+    ollama_manager,
 )
 
 
@@ -33,28 +38,26 @@ router = APIRouter(
 # NOVA WORKSPACE
 # ---------------------------------------------------------------------------
 
-# routes.py is located at:
-# backend/app/api/agents/routes.py
-#
-# parents[0] -> agents
-# parents[1] -> api
-# parents[2] -> app
-# parents[3] -> backend
-
-APP_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parents[2]
+)
 
 BACKEND_ROOT = (
     APP_ROOT.parent
 ).resolve()
 
 WORKSPACE_ROOT = (
-    APP_ROOT
-    / "workspace"
+    APP_ROOT / "workspace"
 ).resolve()
 
 WORKSPACE_INPUT_DIR = (
-    WORKSPACE_ROOT
-    / "input"
+    WORKSPACE_ROOT / "input"
+).resolve()
+
+WORKSPACE_OUTPUT_DIR = (
+    WORKSPACE_ROOT / "output"
 ).resolve()
 
 CHAT_UPLOADS_DIR = (
@@ -63,20 +66,48 @@ CHAT_UPLOADS_DIR = (
     / "chat_uploads"
 ).resolve()
 
-ALLOWED_SPREADSHEET_EXTENSIONS = {
-    ".csv",
-    ".xlsx",
-}
-
 
 # ---------------------------------------------------------------------------
 # REQUEST / RESPONSE MODELS
 # ---------------------------------------------------------------------------
 
 class AgentRunRequest(BaseModel):
-    objective: str = Field(..., min_length=1)
+    objective: str = Field(
+        ...,
+        min_length=1,
+    )
 
-    context: Optional[Dict[str, Any]] = None
+    context: Optional[
+        Dict[str, Any]
+    ] = None
+
+    auto_confirm: bool = False
+
+
+class MissionRunRequest(BaseModel):
+    """
+    Dedicated Mission Control execution request.
+
+    Mission Control uses the same sovereign planner/executor
+    pipeline as Local Chat while attaching mission-specific
+    metadata and evidence references.
+    """
+
+    mission_id: Optional[str] = None
+
+    title: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    objective: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    context: Optional[
+        Dict[str, Any]
+    ] = None
 
     auto_confirm: bool = False
 
@@ -90,16 +121,60 @@ class AgentRunResponse(BaseModel):
 
     response: str
 
+    artifacts: List[
+        Dict[str, Any]
+    ] = []
+
+
+class MissionRunResponse(BaseModel):
+    mission_id: Optional[str] = None
+
+    title: str
+
+    status: str
+
+    conversation_id: Optional[str] = None
+
+    plan: Dict[str, Any]
+
+    execution: Dict[str, Any]
+
+    response: str
+
+    artifacts: List[
+        Dict[str, Any]
+    ] = []
+
+    sovereignty: Dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # ATTACHMENT HELPERS
 # ---------------------------------------------------------------------------
 
+ALLOWED_ATTACHMENT_EXTENSIONS = {
+    ".csv",
+    ".xlsx",
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".md",
+    ".json",
+    ".png",
+    ".jpg",
+    ".jpeg",
+}
+
+
 def _get_context_attachments(
-    context: Optional[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    context: Optional[
+        Dict[str, Any]
+    ],
+) -> List[
+    Dict[str, Any]
+]:
     """
-    Extract attachment references from the agent context.
+    Extract normalized uploaded-file references from agent context.
     """
 
     if not context:
@@ -116,7 +191,9 @@ def _get_context_attachments(
     ):
         return []
 
-    normalized: List[Dict[str, Any]] = []
+    normalized: List[
+        Dict[str, Any]
+    ] = []
 
     for attachment in attachments:
         if not isinstance(
@@ -135,21 +212,25 @@ def _get_context_attachments(
         if not file_id:
             continue
 
+        filename = str(
+            attachment.get(
+                "filename",
+                "",
+            )
+        ).strip()
+
+        content_type = str(
+            attachment.get(
+                "content_type",
+                "",
+            )
+        ).strip()
+
         normalized.append(
             {
                 "file_id": file_id,
-                "filename": str(
-                    attachment.get(
-                        "filename",
-                        "",
-                    )
-                ).strip(),
-                "content_type": str(
-                    attachment.get(
-                        "content_type",
-                        "",
-                    )
-                ).strip(),
+                "filename": filename,
+                "content_type": content_type,
             }
         )
 
@@ -160,13 +241,21 @@ def _resolve_chat_upload_path(
     file_id: str,
 ) -> Path:
     """
-    Resolve a previously uploaded chat file inside
-    NOVA's controlled chat-upload directory.
+    Resolve a previously uploaded file inside NOVA's
+    controlled chat-upload directory.
     """
 
     metadata = load_chat_file(
         file_id
     )
+
+    if not isinstance(
+        metadata,
+        dict,
+    ):
+        raise ValueError(
+            f"Invalid uploaded-file metadata: {file_id}"
+        )
 
     stored_name = str(
         metadata.get(
@@ -208,32 +297,22 @@ def _resolve_chat_upload_path(
     return source_path
 
 
-ALLOWED_ATTACHMENT_EXTENSIONS = {
-    ".csv",
-    ".xlsx",
-    ".pdf",
-    ".docx",
-    ".txt",
-    ".md",
-    ".json",
-    ".png",
-    ".jpg",
-    ".jpeg",
-}
-
-
 def _stage_attachment(
     attachment: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Copy an uploaded attachment into NOVA's controlled
-    workspace/input directory.
+    Stage one uploaded file into workspace/input.
+
+    The staged file is a temporary SOURCE INPUT.
+    It is never treated as an artifact.
     """
 
-    file_id = attachment.get(
-        "file_id",
-        "",
-    )
+    file_id = str(
+        attachment.get(
+            "file_id",
+            "",
+        )
+    ).strip()
 
     if not file_id:
         raise ValueError(
@@ -241,15 +320,20 @@ def _stage_attachment(
         )
 
     source_path = _resolve_chat_upload_path(
-        str(file_id)
+        file_id
     )
 
-    extension = source_path.suffix.lower()
+    extension = (
+        source_path.suffix.lower()
+    )
 
-    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+    if extension not in (
+        ALLOWED_ATTACHMENT_EXTENSIONS
+    ):
         raise ValueError(
             f"Unsupported attachment extension: {extension}. "
-            "Supported formats are CSV, XLSX, PDF, DOCX, TXT, MD, JSON, PNG, JPG."
+            "Supported formats are CSV, XLSX, PDF, DOCX, TXT, "
+            "MD, JSON, PNG and JPEG."
         )
 
     original_filename = (
@@ -264,7 +348,9 @@ def _stage_attachment(
     ).name
 
     if not original_filename:
-        original_filename = source_path.name
+        original_filename = (
+            source_path.name
+        )
 
     safe_filename = (
         f"{file_id}_{original_filename}"
@@ -302,8 +388,14 @@ def _stage_attachment(
         )
 
     return {
-        "file_id": str(file_id),
+        "file_id": file_id,
         "original_filename": original_filename,
+        "content_type": str(
+            attachment.get(
+                "content_type",
+                "",
+            )
+        ),
         "workspace_file_path": str(
             destination_path.relative_to(
                 WORKSPACE_ROOT
@@ -319,18 +411,127 @@ def _stage_attachment(
     }
 
 
-def _prepare_agent_context(
-    context: Optional[Dict[str, Any]],
+# ---------------------------------------------------------------------------
+# EVIDENCE REVIEW DETECTION
+# ---------------------------------------------------------------------------
+
+def _is_evidence_review_request(
     objective: str,
-) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+) -> bool:
     """
-    Prepare context for agent execution.
-
-    Uploaded attachments are staged into NOVA's controlled workspace
-    and their workspace paths are exposed to the planner through the objective.
+    Detect missions where the user wants NOVA to understand and explain
+    the supplied evidence rather than create a deliverable.
     """
 
-    prepared_context: Dict[str, Any] = dict(
+    text = " ".join(
+        str(
+            objective or ""
+        ).lower().split()
+    )
+
+    review_terms = (
+        "check the files", "check every file", "check all files", "check every attached file",
+        "check all attached files", "check these files", "check the attached files",
+        "check the provided files", "check uploaded files", "check each file", "check the file",
+        "read every file", "read all files", "read every attached file", "read all attached files",
+        "read these files", "read uploaded files", "read each file", "read the file", "read the files",
+        "review the files", "review every file", "review all files", "review every attached file",
+        "review all attached files", "review the attached files", "review the provided files",
+        "review uploaded files", "review each file", "review the evidence", "review all the evidence", "review the file",
+        "inspect every file", "inspect all files", "inspect every attached file",
+        "inspect all attached files", "inspect the attached files", "inspect each file", "inspect the file", "inspect the files",
+        "analyze every file", "analyse every file", "analyze all files", "analyse all files",
+        "analyze every attached file", "analyse every attached file", "analyze all attached files",
+        "analyse all attached files", "analyze the attached files", "analyse the attached files",
+        "analyze the provided files", "analyse the provided files", "analyze each file", "analyse each file",
+        "analyze the file", "analyse the file", "analyze the files", "analyse the files",
+        "tell me what each file", "tell me what every file", "tell me what each uploaded file",
+        "tell me what each attached file", "tell me what each file contains",
+        "tell me what every file contains", "tell me what each file is about",
+        "tell me what every file is about", "tell me what these files contain",
+        "tell me what these files are about", "tell me what each uploaded file contains",
+        "tell me what each uploaded file is about", "tell me what each attached file contains",
+        "tell me what this file contains", "tell me what this spreadsheet contains", "tell me what this document contains",
+        "what each file contains", "what every file contains", "what each file is about",
+        "what every file is about", "what does each file contain", "what does every file contain",
+        "what are these files about", "what do these files contain", "what each uploaded file contains",
+        "what this file contains", "what this spreadsheet contains",
+        "explain each file", "explain every file", "explain these files", "explain all files", "explain the file", "explain the files",
+        "summarize each file", "summarise each file", "summarize every file", "summarise every file",
+        "summarize these files", "summarise these files", "summarize all files", "summarise all files", "summarize the file", "summarise the file",
+        "summarize each one", "summarise each one", "explain each one", "explain the contents", "explain what each file contains",
+        "understand the files", "understand every file", "understand these files",
+        "look through the files", "go through the files",
+    )
+
+    if any(term in text for term in review_terms):
+        return True
+
+    action_words = ("check", "review", "read", "analyze", "analyse", "inspect", "explain", "summarize", "summarise", "understand", "tell")
+    file_words = ("file", "files", "attachment", "attachments", "upload", "uploads", "evidence", "spreadsheet", "document")
+    has_action = any(act in text for act in action_words)
+    has_file = any(f in text for f in file_words)
+    has_scope = any(sc in text for sc in ("each", "every", "all", "these", "this", "attached", "uploaded", "provided", "supplied"))
+
+    return bool(has_action and has_file and has_scope)
+
+
+def _is_evidence_review_report_request(
+    objective: str,
+) -> bool:
+    """
+    Detect if user wants both evidence review AND a generated report file.
+    """
+    if not _is_evidence_review_request(objective):
+        return False
+
+    text = str(objective or "").lower()
+
+    if "do not create any files" in text or "don't create any files" in text or "no files" in text:
+        return False
+
+    report_terms = (
+        "create a pdf", "generate a pdf", "make a pdf", "write a pdf", "pdf report",
+        "create a docx", "generate a docx", "make a docx", "write a docx", "word document", "word report",
+        "create a report", "generate a report", "make a report", "write a report", "report file",
+        "create a document", "generate a document", "make a document", "write a document",
+        "create an excel", "generate an excel", "excel report", "create a powerpoint", "pptx"
+    )
+
+    return any(term in text for term in report_terms)
+
+
+# ---------------------------------------------------------------------------
+# AGENT CONTEXT PREPARATION
+# ---------------------------------------------------------------------------
+
+def _prepare_agent_context(
+    context: Optional[
+        Dict[str, Any]
+    ],
+    objective: str,
+) -> tuple[
+    Dict[str, Any],
+    List[
+        Dict[str, Any]
+    ],
+]:
+    """
+    Prepare a complete sovereign runtime context.
+
+    Original uploaded-file references are preserved under
+    mission_attachments.
+
+    Temporary staged paths are exposed under staged_files.
+
+    Mission conversation history is converted into text so
+    the planner can reason over previous mission turns.
+    """
+
+    prepared_context: Dict[
+        str,
+        Any,
+    ] = dict(
         context or {}
     )
 
@@ -338,64 +539,306 @@ def _prepare_agent_context(
         context
     )
 
-    if not attachments:
-        return (
-            prepared_context,
-            [],
-        )
+    prepared_context[
+        "mission_attachments"
+    ] = attachments
 
-    staged_attachments: List[Dict[str, Any]] = []
+    staged_attachments: List[
+        Dict[str, Any]
+    ] = []
 
-    for attachment in attachments:
-        staged = _stage_attachment(
-            attachment
-        )
+    if attachments:
+        try:
+            for attachment in attachments:
+                staged = _stage_attachment(
+                    attachment
+                )
 
-        staged_attachments.append(
-            staged
+                staged_attachments.append(
+                    staged
+                )
+        except Exception:
+            _cleanup_staged_files(
+                staged_attachments
+            )
+            raise
+
+    staged_paths = [
+        item[
+            "workspace_file_path"
+        ]
+        for item in staged_attachments
+    ]
+
+    spreadsheet_paths = [
+        path
+        for path in staged_paths
+        if path.lower().endswith(
+            (
+                ".csv",
+                ".xlsx",
+            )
         )
+    ]
+
+    document_paths = [
+        path
+        for path in staged_paths
+        if path.lower().endswith(
+            (
+                ".pdf",
+                ".docx",
+                ".txt",
+                ".md",
+                ".json",
+            )
+        )
+    ]
+
+    image_paths = [
+        path
+        for path in staged_paths
+        if path.lower().endswith(
+            (
+                ".png",
+                ".jpg",
+                ".jpeg",
+            )
+        )
+    ]
 
     prepared_context[
         "attachments"
     ] = staged_attachments
 
-    staged_paths = [
-        item["workspace_file_path"]
-        for item in staged_attachments
-    ]
-
     prepared_context[
         "staged_files"
     ] = staged_paths
 
-    # Separate spreadsheet vs document paths
-    spreadsheet_paths = [
-        p for p in staged_paths if p.endswith((".csv", ".xlsx"))
-    ]
-    document_paths = [
-        p for p in staged_paths if p.endswith((".pdf", ".docx", ".txt", ".md"))
-    ]
+    prepared_context[
+        "spreadsheet_files"
+    ] = spreadsheet_paths
 
-    prepared_context["spreadsheet_files"] = spreadsheet_paths
-    prepared_context["document_files"] = document_paths
+    prepared_context[
+        "document_files"
+    ] = document_paths
+
+    prepared_context[
+        "image_files"
+    ] = image_paths
+
+    prepared_context[
+        "evidence_review"
+    ] = _is_evidence_review_request(
+        objective
+    )
+
+    prepared_context[
+        "evidence_review_report"
+    ] = _is_evidence_review_report_request(
+        objective
+    )
+
+    # -----------------------------------------------------------------------
+    # PREVIOUS MISSION CONVERSATION
+    # -----------------------------------------------------------------------
+
+    conversation_history = prepared_context.get(
+        "conversation_history",
+        [],
+    )
+
+    if isinstance(
+        conversation_history,
+        list,
+    ) and conversation_history:
+
+        history_lines: List[str] = []
+
+        for item in conversation_history[-12:]:
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            role = str(
+                item.get(
+                    "role",
+                    "",
+                )
+            ).strip().lower()
+
+            content = str(
+                item.get(
+                    "content",
+                    "",
+                )
+            ).strip()
+
+            if not content:
+                continue
+
+            if role not in {
+                "user",
+                "assistant",
+            }:
+                continue
+
+            history_lines.append(
+                f"{role.upper()}: {content}"
+            )
+
+        if history_lines:
+            prepared_context[
+                "conversation_history_text"
+            ] = "\n".join(
+                history_lines
+            )
+
+    # -----------------------------------------------------------------------
+    # SOURCE EVIDENCE INSTRUCTIONS
+    # -----------------------------------------------------------------------
+
+    attachment_instruction = ""
 
     if staged_paths:
         attachment_instruction = (
-            "\n\nUploaded workspace attachment(s) are available "
-            "inside the NOVA workspace at:\n"
+            "\n\nREAL USER-PROVIDED EVIDENCE IS AVAILABLE "
+            "INSIDE THE NOVA WORKSPACE.\n"
+            "SOURCE FILES:\n"
             + "\n".join(
                 f"- {path}"
                 for path in staged_paths
             )
-            + "\nUse these local workspace paths when executing tools."
+            + "\n\nIMPORTANT SOURCE RULES:\n"
+            "- These files are the authoritative source inputs.\n"
+            "- Read the ACTUAL CONTENT of every supplied file before answering.\n"
+            "- Do not infer a file's contents from its filename.\n"
+            "- Do not invent missing measurements, records, observations or facts.\n"
+            "- Do not overwrite or modify source files.\n"
+            "- Do not create an artifact unless the user explicitly asks for one.\n"
         )
 
-        prepared_context[
-            "agent_objective"
-        ] = (
-            objective
-            + attachment_instruction
+    if prepared_context.get(
+        "evidence_review"
+    ):
+        attachment_instruction += (
+            "\n\nEVIDENCE REVIEW MODE IS ACTIVE.\n"
+            "The user's goal is to understand the supplied files.\n"
+            "You MUST inspect every supplied source file.\n"
+            "There must be one reading step for every supplied source file.\n"
+            "After all files are read, synthesize a conversational answer.\n"
+            "Do NOT create a PDF, DOCX, PPTX, XLSX, CSV, chart, or other artifact "
+            "unless the user explicitly requests that artifact.\n"
+            "The final response must explain what each file is about and what it contains.\n"
+            "Do not report file size, storage path, verification status, or output location "
+            "unless the user explicitly asks for those details.\n"
         )
+
+    # -----------------------------------------------------------------------
+    # CURRENT MISSION CONTEXT
+    # -----------------------------------------------------------------------
+
+    history_text = str(
+        prepared_context.get(
+            "conversation_history_text",
+            "",
+        )
+    ).strip()
+
+    mission_context = prepared_context.get(
+        "mission",
+        {},
+    )
+
+    mission_context_text = ""
+
+    if isinstance(
+        mission_context,
+        dict,
+    ):
+        mission_title = str(
+            mission_context.get(
+                "title",
+                "",
+            )
+        ).strip()
+
+        mission_id = str(
+            mission_context.get(
+                "mission_id",
+                "",
+            )
+        ).strip()
+
+        mission_type = str(
+            mission_context.get(
+                "type",
+                mission_context.get(
+                    "mission_type",
+                    "",
+                ),
+            )
+        ).strip()
+
+        mission_priority = str(
+            mission_context.get(
+                "priority",
+                "",
+            )
+        ).strip()
+
+        mission_autonomy = str(
+            mission_context.get(
+                "autonomy",
+                "",
+            )
+        ).strip()
+
+        if (
+            mission_title
+            or mission_id
+            or mission_type
+            or mission_priority
+            or mission_autonomy
+        ):
+            mission_context_text = (
+                "\n\nCURRENT MISSION CONTEXT:\n"
+                f"- Mission ID: {mission_id}\n"
+                f"- Mission: {mission_title}\n"
+                f"- Type: {mission_type}\n"
+                f"- Priority: {mission_priority}\n"
+                f"- Autonomy: {mission_autonomy}\n"
+            )
+
+    # -----------------------------------------------------------------------
+    # PREVIOUS CONVERSATION CONTEXT
+    # -----------------------------------------------------------------------
+
+    conversation_context_text = ""
+
+    if history_text:
+        conversation_context_text = (
+            "\n\nPREVIOUS MISSION CONVERSATION:\n"
+            f"{history_text}\n"
+            "\nUse the previous conversation only as context. "
+            "Do not treat unsupported statements as facts. "
+            "Use supplied evidence as the authoritative source."
+        )
+
+    prepared_context[
+        "conversation_history_text"
+    ] = history_text
+
+    prepared_context[
+        "agent_objective"
+    ] = (
+        objective
+        + mission_context_text
+        + conversation_context_text
+        + attachment_instruction
+    )
 
     return (
         prepared_context,
@@ -403,12 +846,17 @@ def _prepare_agent_context(
     )
 
 
+# ---------------------------------------------------------------------------
+# CLEANUP
+# ---------------------------------------------------------------------------
+
 def _cleanup_staged_files(
-    staged_attachments: List[Dict[str, Any]],
+    staged_attachments: List[
+        Dict[str, Any]
+    ],
 ) -> None:
     """
-    Remove temporary spreadsheet copies created for the
-    agent execution.
+    Remove temporary staged copies created for an execution.
     """
 
     for attachment in staged_attachments:
@@ -431,7 +879,10 @@ def _cleanup_staged_files(
             continue
 
         try:
-            if path.exists() and path.is_file():
+            if (
+                path.exists()
+                and path.is_file()
+            ):
                 path.unlink()
         except OSError:
             continue
@@ -453,9 +904,18 @@ def serialize_execution(
         execution,
         "to_dict",
     ):
-        return execution.to_dict()
+        result = execution.to_dict()
 
-    result: Dict[str, Any] = {}
+        if isinstance(
+            result,
+            dict,
+        ):
+            return result
+
+    result: Dict[
+        str,
+        Any,
+    ] = {}
 
     for attribute in (
         "completed_steps",
@@ -466,7 +926,9 @@ def serialize_execution(
             execution,
             attribute,
         ):
-            result[attribute] = getattr(
+            result[
+                attribute
+            ] = getattr(
                 execution,
                 attribute,
             )
@@ -481,13 +943,19 @@ def serialize_execution(
             plan,
             "status",
         ):
-            result["status"] = (
-                plan.status.value
+            status = plan.status
+
+            result[
+                "status"
+            ] = (
+                status.value
                 if hasattr(
-                    plan.status,
+                    status,
                     "value",
                 )
-                else str(plan.status)
+                else str(
+                    status
+                )
             )
 
     return result
@@ -501,7 +969,10 @@ def build_synthesis_context(
     for final response synthesis.
     """
 
-    context: Dict[str, Any] = {}
+    context: Dict[
+        str,
+        Any
+    ] = {}
 
     if not hasattr(
         execution,
@@ -512,13 +983,1302 @@ def build_synthesis_context(
     plan = execution.plan
 
     for step in plan.steps:
+        status_value = getattr(
+            step.status,
+            "value",
+            str(
+                step.status
+            ),
+        )
+
         if (
-            step.status.value == "completed"
+            status_value
+            == "completed"
             and step.result is not None
         ):
-            context[step.id] = step.result
+            context[
+                step.id
+            ] = step.result
 
     return context
+
+
+# ---------------------------------------------------------------------------
+# EVIDENCE CONTENT EXTRACTION
+# ---------------------------------------------------------------------------
+
+def _humanize_source_name(
+    value: Any,
+) -> str:
+    """
+    Convert a workspace path or filename into
+    a clean user-facing file name.
+    """
+
+    text = str(
+        value or ""
+    ).strip()
+
+    if not text:
+        return "Supplied file"
+
+    return Path(
+        text
+    ).name
+
+
+def _json_safe_preview(
+    value: Any,
+    max_chars: int = 8000,
+) -> str:
+    """
+    Convert structured reader data into bounded readable text.
+    """
+
+    try:
+        serialized = json.dumps(
+            value,
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
+    except Exception:
+        serialized = str(
+            value
+        )
+
+    serialized = serialized.strip()
+
+    if len(serialized) <= max_chars:
+        return serialized
+
+    return (
+        serialized[
+            : max_chars - 3
+        ].rstrip()
+        + "..."
+    )
+
+
+def _extract_result_text(
+    result: Any,
+) -> str:
+    """
+    Extract useful readable content from common reader result structures.
+
+    IMPORTANT:
+    Spreadsheet reader output is structured under sheets/headers/rows,
+    so it is explicitly converted into a readable evidence representation.
+    """
+
+    if result is None:
+        return ""
+
+    if isinstance(
+        result,
+        str,
+    ):
+        return result.strip()
+
+    if isinstance(
+        result,
+        list,
+    ):
+        parts: List[str] = []
+
+        for item in result:
+            text = _extract_result_text(
+                item
+            )
+
+            if text:
+                parts.append(
+                    text
+                )
+
+        return "\n".join(
+            parts
+        ).strip()
+
+    if not isinstance(
+        result,
+        dict,
+    ):
+        return str(
+            result
+        ).strip()
+
+    # -----------------------------------------------------------------------
+    # SPREADSHEET STRUCTURE
+    # -----------------------------------------------------------------------
+
+    if isinstance(
+        result.get(
+            "sheets"
+        ),
+        list,
+    ):
+        spreadsheet_lines: List[str] = []
+
+        file_name = str(
+            result.get(
+                "file_name",
+                "",
+            )
+        ).strip()
+
+        file_type = str(
+            result.get(
+                "file_type",
+                "",
+            )
+        ).strip()
+
+        sheet_count = result.get(
+            "sheet_count"
+        )
+
+        if file_name:
+            spreadsheet_lines.append(
+                f"File: {file_name}"
+            )
+
+        if file_type:
+            spreadsheet_lines.append(
+                f"Type: {file_type.upper()}"
+            )
+
+        if sheet_count is not None:
+            spreadsheet_lines.append(
+                f"Sheets: {sheet_count}"
+            )
+
+        spreadsheet_lines.append(
+            ""
+        )
+
+        for sheet_index, sheet in enumerate(
+            result.get(
+                "sheets",
+                [],
+            )
+        ):
+            if not isinstance(
+                sheet,
+                dict,
+            ):
+                continue
+
+            sheet_name = str(
+                sheet.get(
+                    "sheet_name",
+                    f"Sheet {sheet_index + 1}",
+                )
+            ).strip()
+
+            headers = sheet.get(
+                "headers",
+                [],
+            )
+
+            rows = sheet.get(
+                "rows",
+                [],
+            )
+
+            row_count = sheet.get(
+                "row_count",
+                len(
+                    rows
+                    if isinstance(
+                        rows,
+                        list,
+                    )
+                    else []
+                ),
+            )
+
+            column_count = sheet.get(
+                "column_count",
+                len(
+                    headers
+                    if isinstance(
+                        headers,
+                        list,
+                    )
+                    else []
+                ),
+            )
+
+            spreadsheet_lines.append(
+                f"Sheet: {sheet_name}"
+            )
+
+            spreadsheet_lines.append(
+                f"Dimensions: {row_count} data rows × {column_count} columns"
+            )
+
+            if isinstance(
+                headers,
+                list,
+            ) and headers:
+
+                header_text = ", ".join(
+                    str(
+                        header
+                    )
+                    for header in headers
+                )
+
+                spreadsheet_lines.append(
+                    f"Columns: {header_text}"
+                )
+
+            if isinstance(
+                rows,
+                list,
+            ) and rows:
+
+                spreadsheet_lines.append(
+                    "Sample data:"
+                )
+
+                for row in rows[:8]:
+                    if not isinstance(
+                        row,
+                        (
+                            list,
+                            tuple,
+                        ),
+                    ):
+                        row = [
+                            row
+                        ]
+
+                    row_text = " | ".join(
+                        "" if value is None
+                        else str(value)
+                        for value in row
+                    )
+
+                    spreadsheet_lines.append(
+                        f"- {row_text}"
+                    )
+
+            else:
+                spreadsheet_lines.append(
+                    "Sample data: no data rows returned"
+                )
+
+            spreadsheet_lines.append(
+                ""
+            )
+
+        return "\n".join(
+            spreadsheet_lines
+        ).strip()
+
+    # -----------------------------------------------------------------------
+    # COMMON TEXT FIELDS
+    # -----------------------------------------------------------------------
+
+    preferred_keys = (
+        "text",
+        "content",
+        "extracted_text",
+        "document_text",
+        "summary",
+        "description",
+        "analysis",
+    )
+
+    for key in preferred_keys:
+        value = result.get(
+            key
+        )
+
+        if isinstance(
+            value,
+            str,
+        ) and value.strip():
+            return value.strip()
+
+    # -----------------------------------------------------------------------
+    # NESTED STRUCTURES
+    # -----------------------------------------------------------------------
+
+    nested_keys = (
+        "data",
+        "document",
+        "extraction",
+        "output",
+        "result",
+    )
+
+    for key in nested_keys:
+        nested = result.get(
+            key
+        )
+
+        if nested is result:
+            continue
+
+        nested_text = _extract_result_text(
+            nested
+        )
+
+        if nested_text:
+            return nested_text
+
+    # -----------------------------------------------------------------------
+    # LAST-RESORT STRUCTURED PREVIEW
+    # -----------------------------------------------------------------------
+
+    useful = {
+        key: value
+        for key, value in result.items()
+        if key not in {
+            "size_bytes",
+            "workspace",
+            "tool",
+            "verification",
+            "verification_status",
+            "created",
+        }
+    }
+
+    if useful:
+        return _json_safe_preview(
+            useful
+        )
+
+    return ""
+
+
+def _summarize_source_code_file(
+    file_name: str,
+    text: str,
+) -> str:
+    ext = Path(file_name).suffix.lower()
+    lines = [line for line in text.splitlines() if line.strip()]
+    total_lines = len(lines)
+
+    if ext == ".css":
+        selectors = re.findall(r"([\.#a-zA-Z0-9_\-\s,]+)\s*\{", text)
+        clean_sel = [s.strip() for s in selectors if s.strip() and not s.strip().startswith("@")][:12]
+        sel_text = f"Key selectors/components: {', '.join(clean_sel)}" if clean_sel else ""
+        return (
+            f"File: {file_name} (Frontend CSS Stylesheet, {total_lines} lines)\n"
+            f"Purpose: Defines UI styling, dark theme, layout structure, typography, colors, panels, buttons, and animations.\n"
+            f"{sel_text}\n"
+            f"Summary: Contains styling declarations covering visual layout and responsive UI design."
+        )
+
+    if ext == ".json":
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                keys = list(parsed.keys())
+                return (
+                    f"File: {file_name} (JSON Data/Configuration, {total_lines} lines)\n"
+                    f"Purpose: Structured JSON data containing key fields: {', '.join(keys[:15])}.\n"
+                    f"Key fields count: {len(keys)}"
+                )
+            elif isinstance(parsed, list):
+                return (
+                    f"File: {file_name} (JSON Array, {len(parsed)} items, {total_lines} lines)\n"
+                    f"Sample record: {json.dumps(parsed[0]) if parsed else '[]'}"
+                )
+        except Exception:
+            pass
+        return f"File: {file_name} (JSON data, {total_lines} lines)\nContent preview: {text[:500]}"
+
+    if ext in {".py", ".js", ".ts", ".jsx", ".tsx"}:
+        symbols = re.findall(r"(?:def|function|const|class)\s+([a-zA-Z0-9_]+)", text)
+        clean_symbols = sorted(list(set(symbols)))[:12]
+        sym_text = f"Declared functions/classes: {', '.join(clean_symbols)}" if clean_symbols else "Main script execution"
+        return (
+            f"File: {file_name} ({ext.lstrip('.').upper()} Source Module, {total_lines} lines)\n"
+            f"Purpose: Program source code implementing application logic.\n"
+            f"{sym_text}"
+        )
+
+    if ext == ".md":
+        headings = re.findall(r"^\s*#{1,6}\s+(.+)$", text, flags=re.MULTILINE)
+        h_text = f"Major sections: {', '.join(h.strip() for h in headings[:10])}" if headings else ""
+        return (
+            f"File: {file_name} (Markdown Document, {total_lines} lines)\n"
+            f"{h_text}\n"
+            f"Summary: {text[:600]}"
+        )
+
+    if ext == ".log":
+        return (
+            f"File: {file_name} (Log File, {total_lines} lines)\n"
+            f"First entry: {lines[0] if lines else ''}\n"
+            f"Latest entry: {lines[-1] if lines else ''}"
+        )
+
+    return f"File: {file_name} ({ext.lstrip('.').upper()} File, {total_lines} lines)\nSummary: {text[:800]}"
+
+
+def _clean_evidence_text(
+    text: str,
+    max_chars: int = 6500,
+) -> str:
+    """
+    Clean source text while preserving useful code/document content.
+    """
+
+    value = str(
+        text or ""
+    ).replace(
+        "\r\n",
+        "\n",
+    ).replace(
+        "\r",
+        "\n",
+    ).strip()
+
+    if not value:
+        return ""
+
+    value = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        value,
+    )
+
+    if len(value) <= max_chars:
+        return value
+
+    return (
+        value[
+            : max_chars - 3
+        ].rstrip()
+        + "..."
+    )
+
+
+def _build_evidence_source_packet(
+    execution: Any,
+    prepared_context: Dict[str, Any],
+) -> List[
+    Dict[str, Any]
+]:
+    """
+    Build a bounded, structured source packet for NOVA's
+    local evidence-review language model.
+    """
+
+    if not hasattr(
+        execution,
+        "plan",
+    ):
+        return []
+
+    staged_attachments = (
+        prepared_context.get(
+            "attachments",
+            [],
+        )
+    )
+
+    filename_by_path: Dict[
+        str,
+        str,
+    ] = {}
+
+    if isinstance(
+        staged_attachments,
+        list,
+    ):
+        for attachment in staged_attachments:
+            if not isinstance(
+                attachment,
+                dict,
+            ):
+                continue
+
+            path_value = str(
+                attachment.get(
+                    "workspace_file_path",
+                    "",
+                )
+            ).strip().replace(
+                "\\",
+                "/",
+            )
+
+            original_filename = str(
+                attachment.get(
+                    "original_filename",
+                    "",
+                )
+            ).strip()
+
+            if path_value:
+                filename_by_path[
+                    path_value
+                ] = (
+                    original_filename
+                    or _humanize_source_name(
+                        path_value
+                    )
+                )
+
+    packet: List[
+        Dict[str, Any]
+    ] = []
+
+    for step in execution.plan.steps:
+        status_value = getattr(
+            step.status,
+            "value",
+            str(
+                step.status
+            ),
+        )
+
+        if status_value != "completed":
+            continue
+
+        result = step.result
+
+        if result is None:
+            continue
+
+        tool_name = str(
+            getattr(
+                step,
+                "tool",
+                "",
+            )
+        ).strip().lower()
+
+        if tool_name not in {
+            "file_reader",
+            "document_reader",
+            "spreadsheet_reader",
+            "spreadsheet_analysis",
+            "ocr",
+            "image_reader",
+        }:
+            continue
+
+        source_path = ""
+
+        if isinstance(
+            result,
+            dict,
+        ):
+            for key in (
+                "file_path",
+                "source_file",
+                "source_path",
+                "workspace_file_path",
+                "path",
+            ):
+                candidate = str(
+                    result.get(
+                        key,
+                        "",
+                    )
+                ).strip()
+
+                if candidate:
+                    source_path = (
+                        candidate
+                        .replace(
+                            "\\",
+                            "/",
+                        )
+                    )
+                    break
+
+        source_name = (
+            filename_by_path.get(
+                source_path
+            )
+            or str(
+                result.get(
+                    "file_name",
+                    "",
+                )
+            ).strip()
+            if isinstance(
+                result,
+                dict,
+            )
+            else ""
+        )
+
+        if not source_name:
+            step_description = str(
+                getattr(
+                    step,
+                    "description",
+                    "",
+                )
+            ).strip()
+
+            for candidate_path, candidate_name in (
+                filename_by_path.items()
+            ):
+                if Path(
+                    candidate_path
+                ).name.lower() in step_description.lower():
+                    source_name = candidate_name
+                    source_path = candidate_path
+                    break
+
+        if not source_name:
+            source_name = _humanize_source_name(
+                source_path
+            )
+
+        extracted_text = _extract_result_text(
+            result
+        )
+
+        ext = Path(source_name).suffix.lower()
+        if ext in {".css", ".json", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".xml", ".yaml", ".yml", ".log"}:
+            extracted_text = _summarize_source_code_file(source_name, extracted_text)
+        else:
+            extracted_text = _clean_evidence_text(
+                extracted_text,
+                max_chars=6500,
+            )
+
+        if not extracted_text:
+            extracted_text = (
+                f"File '{source_name}' was opened, but no readable text was extracted."
+            )
+
+        packet.append(
+            {
+                "file_name": source_name,
+                "file_path": source_path,
+                "reader": tool_name,
+                "actual_content": extracted_text,
+            }
+        )
+
+    return packet
+
+
+# ---------------------------------------------------------------------------
+# LOCAL EVIDENCE REVIEW RESPONSE
+# ---------------------------------------------------------------------------
+
+EVIDENCE_REVIEW_SYSTEM_PROMPT = """
+You are NOVA's local evidence-review assistant.
+
+Your job is to answer the user's request using ONLY the actual extracted evidence in the packet.
+
+Required output format:
+
+I reviewed all the attached files and examined their actual contents.
+
+### 1. filename
+What it is:
+...
+
+What it contains / Sheets & Data:
+...
+
+Key information / Important visible patterns:
+...
+
+Rules:
+- Do not dump raw source code or long text blocks for CSS, JS, PY, JSON, etc. Summarize what the code or stylesheet does.
+- For spreadsheets, explain sheets, column names, data dimensions, and representative sample records based on actual rows.
+- For PDF/Word documents, summarize document subject, major sections, and key findings.
+- For images, summarize readable text or visible properties.
+- Do not report internal file paths, storage locations, or verification metadata unless explicitly asked.
+- Do not invent facts that are not supported by the extracted evidence.
+"""
+
+
+def _generate_evidence_review_response(
+    objective: str,
+    execution: Any,
+    prepared_context: Dict[str, Any],
+) -> str:
+    """
+    Use the local NOVA model to turn actual reader results into
+    a natural conversational file-by-file answer.
+    """
+
+    packet = _build_evidence_source_packet(
+        execution=execution,
+        prepared_context=prepared_context,
+    )
+
+    if not packet:
+        return (
+            "I could not complete the evidence review because "
+            "no source-reading results were completed."
+        )
+
+    evidence_sections: List[str] = []
+
+    for index, item in enumerate(
+        packet,
+        start=1,
+    ):
+        evidence_sections.append(
+            (
+                f"SOURCE {index}\n"
+                f"FILE NAME: {item['file_name']}\n"
+                f"FILE TYPE / READER: {item['reader']}\n"
+                f"ACTUAL EXTRACTED CONTENT:\n"
+                f"{item['actual_content']}\n"
+            )
+        )
+
+    evidence_packet = (
+        "\n".join(
+            evidence_sections
+        )
+    )
+
+    prompt = f"""
+USER REQUEST:
+
+{objective}
+
+ACTUAL LOCAL EVIDENCE:
+
+{evidence_packet}
+
+Produce the final conversational answer now.
+
+The answer MUST contain a separate section for every supplied source file.
+Do not repeat raw source code verbatim.
+""".strip()
+
+    try:
+        routing = route_request(
+            objective
+        )
+
+        result = ollama_manager.generate(
+            model=routing.model_name,
+            prompt=prompt,
+            system=EVIDENCE_REVIEW_SYSTEM_PROMPT,
+            temperature=0.1,
+            num_predict=2200,
+            stream=False,
+        )
+
+        response = str(
+            result.get(
+                "response",
+                "",
+            )
+        ).strip()
+
+        if response and "###" in response:
+            return response
+
+    except Exception as exc:
+        print(
+            "[NOVA EVIDENCE REVIEW MODEL FALLBACK] "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Deterministic fallback
+    # -----------------------------------------------------------------------
+
+    lines: List[str] = [
+        "I reviewed all the attached files and examined their actual contents."
+    ]
+
+    for index, item in enumerate(packet, start=1):
+        file_name = item["file_name"]
+        lines.append(f"\n### {index}. {file_name}")
+
+        text = item.get("actual_content", "").strip()
+
+        lines.append("What it is:")
+        ext = Path(file_name).suffix.lower()
+        if ext in {".xlsx", ".csv"}:
+            lines.append("Spreadsheet workbook containing structured data tables.")
+        elif ext in {".pdf", ".docx"}:
+            lines.append("Document containing formatted text and section headings.")
+        elif ext in {".png", ".jpg", ".jpeg"}:
+            lines.append("Image file analyzed via local OCR / vision processing.")
+        elif ext in {".css", ".json", ".py", ".js", ".ts", ".jsx", ".tsx", ".md", ".log", ".txt"}:
+            lines.append(f"Text/Source file ({ext.lstrip('.').upper()} format).")
+        else:
+            lines.append("Supplied file attachment.")
+
+        lines.append("\nWhat it contains:")
+        lines.append(text if text else "The local extraction returned no readable text for this file.")
+
+    return "\n".join(
+        lines
+    ).strip()
+
+
+# ---------------------------------------------------------------------------
+# EVIDENCE REVIEW RESPONSE
+# ---------------------------------------------------------------------------
+
+def _build_evidence_review_response(
+    execution: Any,
+    prepared_context: Dict[str, Any],
+) -> str:
+    """
+    Build a natural file-by-file evidence review from actual
+    completed reader results.
+    """
+
+    return _generate_evidence_review_response(
+        objective=str(
+            prepared_context.get(
+                "agent_objective",
+                "Review the supplied files.",
+            )
+        ),
+        execution=execution,
+        prepared_context=prepared_context,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ARTIFACT EXTRACTION
+# ---------------------------------------------------------------------------
+
+def _normalize_artifact_path(
+    raw_path: Any,
+) -> Optional[str]:
+    """
+    Normalize only workspace/output/... paths.
+
+    Source input files can never become artifacts.
+    """
+
+    if not raw_path:
+        return None
+
+    raw = (
+        str(raw_path)
+        .replace(
+            "\\",
+            "/",
+        )
+        .strip()
+        .lstrip("/")
+    )
+
+    if not raw:
+        return None
+
+    try:
+        path = Path(raw)
+
+        if path.is_absolute():
+            resolved = path.resolve()
+
+            relative = (
+                resolved.relative_to(
+                    WORKSPACE_ROOT
+                )
+            )
+
+            normalized = str(
+                relative
+            ).replace(
+                "\\",
+                "/",
+            )
+
+        else:
+            normalized = raw
+
+            if normalized.startswith(
+                "workspace/"
+            ):
+                normalized = normalized[
+                    len(
+                        "workspace/"
+                    ):
+                ]
+
+    except Exception:
+        return None
+
+    normalized = (
+        normalized
+        .strip("/")
+    )
+
+    if not normalized:
+        return None
+
+    normalized_lower = (
+        normalized.lower()
+    )
+
+    if (
+        normalized_lower.startswith(
+            "input/"
+        )
+        or normalized_lower.startswith(
+            "workspace/input/"
+        )
+        or "/input/" in normalized_lower
+    ):
+        return None
+
+    if not normalized_lower.startswith(
+        "output/"
+    ):
+        return None
+
+    resolved_path = (
+        WORKSPACE_ROOT
+        / normalized
+    ).resolve()
+
+    try:
+        resolved_path.relative_to(
+            WORKSPACE_OUTPUT_DIR
+        )
+    except ValueError:
+        return None
+
+    return normalized
+
+
+def extract_artifacts(
+    execution_dump: Dict[str, Any],
+) -> List[
+    Dict[str, Any]
+]:
+    """
+    Extract only real generated artifacts that physically exist
+    below workspace/output/.
+    """
+
+    context = execution_dump.get(
+        "context",
+        {},
+    )
+
+    if not isinstance(
+        context,
+        dict,
+    ):
+        return []
+
+    artifacts: List[
+        Dict[str, Any]
+    ] = []
+
+    seen_paths = set()
+
+    for step_id, result in context.items():
+        if not isinstance(
+            result,
+            dict,
+        ):
+            continue
+
+        raw_file_path = result.get(
+            "file_path"
+        )
+
+        if not raw_file_path:
+            continue
+
+        relative_path = (
+            _normalize_artifact_path(
+                raw_file_path
+            )
+        )
+
+        if not relative_path:
+            continue
+
+        if relative_path in seen_paths:
+            continue
+
+        resolved_path = (
+            WORKSPACE_ROOT
+            / relative_path
+        ).resolve()
+
+        try:
+            resolved_path.relative_to(
+                WORKSPACE_OUTPUT_DIR
+            )
+        except ValueError:
+            continue
+
+        if not (
+            resolved_path.exists()
+            and resolved_path.is_file()
+        ):
+            continue
+
+        seen_paths.add(
+            relative_path
+        )
+
+        file_name = (
+            result.get(
+                "file_name"
+            )
+            or resolved_path.name
+        )
+
+        extension = (
+            result.get(
+                "extension"
+            )
+            or resolved_path.suffix
+        )
+
+        extension = str(
+            extension or ""
+        )
+
+        if (
+            extension
+            and not extension.startswith(
+                "."
+            )
+        ):
+            extension = (
+                f".{extension}"
+            )
+
+        extension = extension.lower()
+
+        artifact_type = (
+            extension.lstrip(".")
+            if extension
+            else ""
+        )
+
+        size_bytes = result.get(
+            "size_bytes"
+        )
+
+        if not isinstance(
+            size_bytes,
+            int,
+        ):
+            try:
+                size_bytes = (
+                    resolved_path
+                    .stat()
+                    .st_size
+                )
+            except OSError:
+                size_bytes = None
+
+        verification_status = (
+            result.get(
+                "verification"
+            )
+            or result.get(
+                "verification_status"
+            )
+            or (
+                "VERIFIED"
+                if result.get(
+                    "verified"
+                )
+                else "COMPLETED"
+            )
+        )
+
+        artifacts.append(
+            {
+                "step_id": str(
+                    step_id
+                ),
+                "file_name": str(
+                    file_name
+                ),
+                "file_path": relative_path,
+                "extension": extension,
+                "artifact_type": artifact_type,
+                "size_bytes": size_bytes,
+                "verification_status": str(
+                    verification_status
+                ),
+                "available": True,
+            }
+        )
+
+    return artifacts
+
+
+# ---------------------------------------------------------------------------
+# ARTIFACT RESPONSE
+# ---------------------------------------------------------------------------
+
+def _format_artifact_size(
+    size_bytes: Any,
+) -> str:
+    if not isinstance(
+        size_bytes,
+        int,
+    ) or size_bytes < 0:
+        return ""
+
+    if size_bytes < 1024:
+        return (
+            f"{size_bytes} bytes"
+        )
+
+    if size_bytes < 1024 * 1024:
+        return (
+            f"{size_bytes:,} bytes "
+            f"({size_bytes / 1024:.1f} KB)"
+        )
+
+    return (
+        f"{size_bytes:,} bytes "
+        f"({size_bytes / (1024 * 1024):.2f} MB)"
+    )
+
+
+def _artifact_label(
+    extension: str,
+) -> str:
+    mapping = {
+        ".xlsx": "Excel report",
+        ".csv": "CSV file",
+        ".docx": "Word document",
+        ".pdf": "PDF document",
+        ".pptx": "PowerPoint presentation",
+        ".png": "image",
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".txt": "text file",
+        ".md": "Markdown file",
+        ".json": "JSON file",
+        ".py": "Python file",
+        ".js": "JavaScript file",
+        ".jsx": "React file",
+        ".ts": "TypeScript file",
+        ".tsx": "TypeScript React file",
+    }
+
+    return mapping.get(
+        str(extension).lower(),
+        "file",
+    )
+
+
+def _build_deterministic_artifact_response(
+    artifacts: List[
+        Dict[str, Any]
+    ],
+) -> str:
+    if not artifacts:
+        return ""
+
+    if len(artifacts) == 1:
+        artifact = artifacts[0]
+
+        label = _artifact_label(
+            artifact.get(
+                "extension",
+                "",
+            )
+        )
+
+        lines = [
+            f"Done — your {label} has been created.",
+            "",
+            (
+                "File: "
+                f"{artifact.get('file_name', 'Generated artifact')}"
+            ),
+            (
+                "Location: "
+                f"{artifact.get('file_path', '')}"
+            ),
+        ]
+
+        size_text = (
+            _format_artifact_size(
+                artifact.get(
+                    "size_bytes"
+                )
+            )
+        )
+
+        if size_text:
+            lines.append(
+                f"Size: {size_text}"
+            )
+
+        verification = str(
+            artifact.get(
+                "verification_status",
+                "",
+            )
+        ).strip()
+
+        if verification:
+            lines.append(
+                f"Verification: {verification}"
+            )
+
+        return "\n".join(
+            lines
+        )
+
+    lines = [
+        "Done — NOVA generated the requested artifacts.",
+        "",
+    ]
+
+    for artifact in artifacts:
+        file_name = artifact.get(
+            "file_name",
+            "Generated artifact",
+        )
+
+        file_path = artifact.get(
+            "file_path",
+            "",
+        )
+
+        lines.append(
+            f"- {file_name}"
+        )
+
+        if file_path:
+            lines.append(
+                f"  Location: {file_path}"
+            )
+
+        size_text = (
+            _format_artifact_size(
+                artifact.get(
+                    "size_bytes"
+                )
+            )
+        )
+
+        if size_text:
+            lines.append(
+                f"  Size: {size_text}"
+            )
+
+    return "\n".join(
+        lines
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -528,10 +2288,6 @@ def build_synthesis_context(
 def build_conversation_title(
     objective: str,
 ) -> str:
-    """
-    Create a clean Recent Chats title from the user's objective.
-    """
-
     cleaned = " ".join(
         objective.strip().split()
     )
@@ -549,7 +2305,278 @@ def build_conversation_title(
 
 
 # ---------------------------------------------------------------------------
-# AGENT RUN
+# SHARED AGENT EXECUTION
+# ---------------------------------------------------------------------------
+
+def _execute_agent_workflow(
+    objective: str,
+    context: Optional[
+        Dict[str, Any]
+    ],
+    auto_confirm: bool,
+) -> tuple[
+    Dict[str, Any],
+    Dict[str, Any],
+    List[
+        Dict[str, Any]
+    ],
+    str,
+]:
+    """
+    Shared sovereign Planner -> Executor -> Response pipeline.
+    """
+
+    (
+        prepared_context,
+        staged_attachments,
+    ) = _prepare_agent_context(
+        context=context,
+        objective=objective,
+    )
+
+    try:
+        planner_objective = str(
+            prepared_context.get(
+                "agent_objective",
+                objective,
+            )
+        ).strip()
+
+        plan = (
+            agent_planner.create_plan(
+                objective=planner_objective,
+            )
+        )
+
+        executor = AgentExecutor(
+            auto_confirm=auto_confirm,
+        )
+
+        execution = executor.execute(
+            plan=plan,
+            context=prepared_context,
+        )
+
+        plan_dump = plan.model_dump(
+            mode="json"
+        )
+
+        execution_dump = (
+            serialize_execution(
+                execution
+            )
+        )
+
+        evidence_review = bool(
+            prepared_context.get(
+                "evidence_review",
+                False,
+            )
+        )
+
+        if evidence_review:
+            response = (
+                _build_evidence_review_response(
+                    execution=execution,
+                    prepared_context={
+                        **prepared_context,
+                        "agent_objective": objective,
+                    },
+                )
+            )
+
+            is_report_requested = bool(
+                prepared_context.get(
+                    "evidence_review_report",
+                    False,
+                )
+            )
+
+            artifacts_dump = (
+                extract_artifacts(
+                    execution_dump
+                )
+                if is_report_requested
+                else []
+            )
+
+            return (
+                plan_dump,
+                execution_dump,
+                artifacts_dump,
+                response,
+            )
+
+        artifacts_dump = (
+            extract_artifacts(
+                execution_dump
+            )
+        )
+
+        if artifacts_dump:
+            response = (
+                _build_deterministic_artifact_response(
+                    artifacts_dump
+                )
+            )
+        else:
+            synthesis_context = (
+                build_synthesis_context(
+                    execution
+                )
+            )
+
+            if synthesis_context:
+                response = (
+                    agent_response_synthesizer.synthesize(
+                        objective=objective,
+                        execution_context=synthesis_context,
+                    )
+                )
+            else:
+                response = (
+                    "NOVA could not produce a final answer "
+                    "because the agent execution did not "
+                    "produce any completed results."
+                )
+
+        return (
+            plan_dump,
+            execution_dump,
+            artifacts_dump,
+            response,
+        )
+
+    finally:
+        _cleanup_staged_files(
+            staged_attachments
+        )
+
+
+# ---------------------------------------------------------------------------
+# SAVE CHAT EXECUTION
+# ---------------------------------------------------------------------------
+
+def _save_agent_conversation(
+    db: Session,
+    objective: str,
+    plan_dump: Dict[str, Any],
+    execution_dump: Dict[str, Any],
+    artifacts_dump: List[
+        Dict[str, Any]
+    ],
+    response: str,
+    request_context: Optional[
+        Dict[str, Any]
+    ],
+) -> str:
+    supplied_conversation_id = None
+
+    if request_context:
+        supplied_conversation_id = (
+            request_context.get(
+                "conversation_id"
+            )
+        )
+
+    conversation = None
+
+    if supplied_conversation_id:
+        conversation = get_conversation(
+            db,
+            str(
+                supplied_conversation_id
+            ),
+        )
+
+    if conversation is None:
+        conversation = (
+            create_conversation(
+                db,
+                title=build_conversation_title(
+                    objective
+                ),
+            )
+        )
+
+    saved_user_message = add_message(
+        db=db,
+        conversation=conversation,
+        role="user",
+        content=objective,
+        model=None,
+    )
+
+    # Mission follow-up chat already keeps the mission evidence
+    # attached to the mission itself. Do not create duplicate
+    # chat attachment rows for every follow-up turn.
+    is_mission_chat = bool(
+        request_context
+        and request_context.get(
+            "source"
+        ) == "nova-mission-chat"
+    )
+
+    if not is_mission_chat:
+        for attachment in (
+            _get_context_attachments(
+                request_context
+            )
+        ):
+            try:
+                file_data = load_chat_file(
+                    attachment[
+                        "file_id"
+                    ]
+                )
+            except Exception:
+                continue
+
+            add_attachment(
+                db=db,
+                message=saved_user_message,
+                file_id=file_data.get(
+                    "file_id",
+                    attachment[
+                        "file_id"
+                    ],
+                ),
+                filename=file_data.get(
+                    "filename",
+                    attachment.get(
+                        "filename",
+                        "Unknown file",
+                    ),
+                ),
+                content_type=file_data.get(
+                    "content_type",
+                    attachment.get(
+                        "content_type",
+                        "",
+                    ),
+                ),
+            )
+
+    agent_data_to_save = {
+        "plan": plan_dump,
+        "execution": execution_dump,
+        "artifacts": artifacts_dump,
+    }
+
+    add_message(
+        db=db,
+        conversation=conversation,
+        role="assistant",
+        content=response,
+        model="NOVA Agent",
+        agent_data=agent_data_to_save,
+    )
+
+    return conversation.id
+
+
+# ---------------------------------------------------------------------------
+# STANDARD AGENT RUN
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -569,195 +2596,305 @@ def run_agent(
             detail="Objective cannot be empty.",
         )
 
-    staged_attachments: List[
-        Dict[str, Any]
-    ] = []
-
     try:
-        # ---------------------------------------------------------------
-        # CONVERSATION
-        # ---------------------------------------------------------------
-
-        supplied_conversation_id = None
-
-        if request.context:
-            supplied_conversation_id = (
-                request.context.get(
-                    "conversation_id"
-                )
-            )
-
-        conversation = None
-
-        if supplied_conversation_id:
-            conversation = get_conversation(
-                db,
-                str(
-                    supplied_conversation_id
-                ),
-            )
-
-        # ---------------------------------------------------------------
-        # PREPARE ATTACHMENTS
-        # ---------------------------------------------------------------
-
-        prepared_context, staged_attachments = (
-            _prepare_agent_context(
-                context=request.context,
-                objective=objective,
-            )
-        )
-
-        planner_objective = str(
-            prepared_context.get(
-                "agent_objective",
-                objective,
-            )
-        ).strip()
-
-        # ---------------------------------------------------------------
-        # PLAN
-        # ---------------------------------------------------------------
-
-        plan = agent_planner.create_plan(
-            objective=planner_objective,
-        )
-
-        # ---------------------------------------------------------------
-        # EXECUTE
-        # ---------------------------------------------------------------
-
-        executor = AgentExecutor(
+        (
+            plan_dump,
+            execution_dump,
+            artifacts_dump,
+            response,
+        ) = _execute_agent_workflow(
+            objective=objective,
+            context=request.context,
             auto_confirm=request.auto_confirm,
         )
 
-        execution = executor.execute(
-            plan=plan,
-            context=prepared_context,
-        )
-
-        # ---------------------------------------------------------------
-        # SYNTHESIZE FINAL RESPONSE
-        # ---------------------------------------------------------------
-
-        synthesis_context = (
-            build_synthesis_context(
-                execution
-            )
-        )
-
-        if synthesis_context:
-            response = (
-                agent_response_synthesizer.synthesize(
-                    objective=objective,
-                    execution_context=synthesis_context,
-                )
-            )
-        else:
-            response = (
-                "NOVA could not produce a final answer "
-                "because the agent execution did not "
-                "produce any completed results."
-            )
-
-        # ---------------------------------------------------------------
-        # CREATE CONVERSATION WHEN NEEDED
-        # ---------------------------------------------------------------
-
-        if conversation is None:
-            conversation = create_conversation(
-                db,
-                title=build_conversation_title(
-                    objective
-                ),
-            )
-
-        # ---------------------------------------------------------------
-        # SAVE USER MESSAGE
-        # ---------------------------------------------------------------
-
-        saved_user_message = add_message(
-            db=db,
-            conversation=conversation,
-            role="user",
-            content=objective,
-            model=None,
-        )
-
-        # ---------------------------------------------------------------
-        # SAVE ATTACHMENT REFERENCES
-        # ---------------------------------------------------------------
-
-        for attachment in _get_context_attachments(
-            request.context
-        ):
-            try:
-                file_data = load_chat_file(
-                    attachment["file_id"]
-                )
-            except Exception:
-                continue
-
-            add_attachment(
+        conversation_id = (
+            _save_agent_conversation(
                 db=db,
-                message=saved_user_message,
-                file_id=file_data.get(
-                    "file_id",
-                    attachment["file_id"],
-                ),
-                filename=file_data.get(
-                    "filename",
-                    attachment.get(
-                        "filename",
-                        "Unknown file",
-                    ),
-                ),
-                content_type=file_data.get(
-                    "content_type",
-                    attachment.get(
-                        "content_type",
-                        "",
-                    ),
-                ),
+                objective=objective,
+                plan_dump=plan_dump,
+                execution_dump=execution_dump,
+                artifacts_dump=artifacts_dump,
+                response=response,
+                request_context=request.context,
             )
-
-        # ---------------------------------------------------------------
-        # SAVE ASSISTANT RESPONSE
-        # ---------------------------------------------------------------
-
-        add_message(
-            db=db,
-            conversation=conversation,
-            role="assistant",
-            content=response,
-            model="NOVA Agent",
         )
-
-        # ---------------------------------------------------------------
-        # RETURN
-        # ---------------------------------------------------------------
 
         return AgentRunResponse(
-            conversation_id=conversation.id,
-            plan=plan.model_dump(
-                mode="json"
-            ),
-            execution=serialize_execution(
-                execution
-            ),
+            conversation_id=conversation_id,
+            plan=plan_dump,
+            execution=execution_dump,
             response=response,
+            artifacts=artifacts_dump,
         )
 
     except HTTPException:
         raise
 
     except Exception as exc:
+        print(
+            f"NOVA Agent execution internal error: {exc}"
+        )
+
         raise HTTPException(
             status_code=500,
-            detail=f"Agent execution failed: {exc}",
+            detail=(
+                "NOVA COULD NOT COMPLETE THIS TASK: "
+                "The requested agent workflow encountered an error."
+            ),
         ) from exc
 
-    finally:
-        _cleanup_staged_files(
-            staged_attachments
+
+# ---------------------------------------------------------------------------
+# MISSION RUN
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/mission/run",
+    response_model=MissionRunResponse,
+)
+def run_mission(
+    request: MissionRunRequest,
+    db: Session = Depends(get_db),
+) -> MissionRunResponse:
+    """
+    Execute one real Mission Control workflow.
+    """
+
+    title = request.title.strip()
+    objective = request.objective.strip()
+
+    if not title:
+        raise HTTPException(
+            status_code=400,
+            detail="Mission title cannot be empty.",
         )
+
+    if not objective:
+        raise HTTPException(
+            status_code=400,
+            detail="Mission objective cannot be empty.",
+        )
+
+    mission_context: Dict[
+        str,
+        Any,
+    ] = dict(
+        request.context or {}
+    )
+
+    supplied_attachments = (
+        _get_context_attachments(
+            mission_context
+        )
+    )
+
+    if not supplied_attachments:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "MISSION REQUIRES AT LEAST ONE REAL "
+                "EVIDENCE FILE."
+            ),
+        )
+
+    # Validate all uploaded references before starting
+    # planner/executor work.
+    for attachment in supplied_attachments:
+        try:
+            source_path = (
+                _resolve_chat_upload_path(
+                    attachment[
+                        "file_id"
+                    ]
+                )
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "MISSION EVIDENCE FILE IS NOT AVAILABLE: "
+                    f"{attachment.get('filename') or attachment['file_id']}"
+                ),
+            ) from exc
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "MISSION EVIDENCE VALIDATION FAILED: "
+                    f"{attachment.get('filename') or attachment['file_id']}"
+                ),
+            ) from exc
+
+        extension = (
+            source_path.suffix.lower()
+        )
+
+        if extension not in (
+            ALLOWED_ATTACHMENT_EXTENSIONS
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "MISSION CONTAINS AN UNSUPPORTED "
+                    f"EVIDENCE FILE: {source_path.name}"
+                ),
+            )
+
+    mission_context[
+        "mission"
+    ] = {
+        **(
+            mission_context.get(
+                "mission",
+                {}
+            )
+            if isinstance(
+                mission_context.get(
+                    "mission",
+                    {}
+                ),
+                dict,
+            )
+            else {}
+        ),
+        "mission_id": request.mission_id,
+        "title": title,
+        "execution_boundary": (
+            "LOCAL / AIR-GAPPED"
+        ),
+        "external_ai_calls": 0,
+        "evidence_count": len(
+            supplied_attachments
+        ),
+    }
+
+    mission_context[
+        "mission_attachments"
+    ] = supplied_attachments
+
+    mission_objective = (
+        f"MISSION: {title}\n\n"
+        f"OBJECTIVE:\n{objective}"
+    )
+
+    try:
+        (
+            plan_dump,
+            execution_dump,
+            artifacts_dump,
+            response,
+        ) = _execute_agent_workflow(
+            objective=mission_objective,
+            context=mission_context,
+            auto_confirm=request.auto_confirm,
+        )
+
+        conversation_id = (
+            _save_agent_conversation(
+                db=db,
+                objective=mission_objective,
+                plan_dump=plan_dump,
+                execution_dump=execution_dump,
+                artifacts_dump=artifacts_dump,
+                response=response,
+                request_context=mission_context,
+            )
+        )
+
+        execution_status = str(
+            execution_dump.get(
+                "status",
+                "",
+            )
+        ).lower().strip()
+
+        failed_steps = (
+            execution_dump.get(
+                "failed_steps"
+            ) or []
+        )
+
+        blocked_steps = (
+            execution_dump.get(
+                "blocked_steps"
+            ) or []
+        )
+
+        if execution_status in {
+            "failed",
+            "error",
+            "failure",
+        }:
+            mission_status = (
+                "FAILED"
+            )
+
+        elif failed_steps:
+            mission_status = (
+                "FAILED"
+            )
+
+        elif blocked_steps:
+            mission_status = (
+                "BLOCKED"
+            )
+
+        elif execution_status in {
+            "completed",
+            "complete",
+            "success",
+            "successful",
+        }:
+            mission_status = (
+                "COMPLETED"
+            )
+
+        else:
+            mission_status = (
+                "COMPLETED"
+            )
+
+        sovereignty = {
+            "execution_mode": (
+                "LOCAL"
+            ),
+            "network_mode": (
+                "AIR-GAPPED"
+            ),
+            "external_ai_calls": 0,
+            "local_reasoning": True,
+            "local_tool_execution": True,
+            "artifact_directory": (
+                "workspace/output/"
+            ),
+        }
+
+        return MissionRunResponse(
+            mission_id=request.mission_id,
+            title=title,
+            status=mission_status,
+            conversation_id=conversation_id,
+            plan=plan_dump,
+            execution=execution_dump,
+            response=response,
+            artifacts=artifacts_dump,
+            sovereignty=sovereignty,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        print(
+            f"NOVA Mission execution internal error: {exc}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "NOVA COULD NOT EXECUTE THIS MISSION: "
+                "The sovereign mission workflow encountered an error."
+            ),
+        ) from exc
