@@ -8249,6 +8249,178 @@ h3,
 }
 
 /* =========================================================
+   ENHANCED DOCUMENT / SPREADSHEET / TXT PREVIEWS
+   ========================================================= */
+
+/* Document Sheet (DOCX / PDF Text View) */
+.nova-document-sheet-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 24px 12px;
+}
+
+.nova-document-sheet {
+  width: 100%;
+  max-width: 780px;
+  min-height: 600px;
+  background: #ffffff;
+  color: #1e293b;
+  padding: 44px 52px;
+  border-radius: 4px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 1px rgba(255, 255, 255, 0.2);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.8;
+  letter-spacing: -0.003em;
+  word-wrap: break-word;
+}
+
+.nova-document-sheet-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.nova-document-sheet-paragraph {
+  margin-bottom: 16px;
+  color: #334155;
+}
+
+.nova-document-sheet-heading {
+  font-size: 17px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+/* Spreadsheet Table (XLSX / CSV) */
+.nova-spreadsheet-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nova-spreadsheet-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.12);
+  padding-bottom: 8px;
+}
+
+.nova-spreadsheet-tab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8eaab8;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(180, 215, 235, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nova-spreadsheet-tab.active {
+  color: #6ddcff;
+  background: rgba(109, 220, 255, 0.12);
+  border-color: rgba(109, 220, 255, 0.35);
+}
+
+.nova-spreadsheet-table-container {
+  width: 100%;
+  max-height: 62vh;
+  overflow: auto;
+  border: 1px solid rgba(180, 215, 235, 0.14);
+  border-radius: 6px;
+  background: #080e15;
+}
+
+.nova-spreadsheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: #d1e5f0;
+  text-align: left;
+}
+
+.nova-spreadsheet-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #0f1a26;
+  color: #6ddcff;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 2px solid rgba(109, 220, 255, 0.25);
+  border-right: 1px solid rgba(180, 215, 235, 0.12);
+  white-space: nowrap;
+}
+
+.nova-spreadsheet-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.07);
+  border-right: 1px solid rgba(180, 215, 235, 0.07);
+  white-space: nowrap;
+}
+
+.nova-spreadsheet-table tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.nova-spreadsheet-table tr:hover {
+  background: rgba(109, 220, 255, 0.05);
+}
+
+.nova-spreadsheet-row-num {
+  color: #557585;
+  font-size: 11px;
+  text-align: center;
+  width: 44px;
+  background: #0b141f;
+  user-select: none;
+}
+
+/* TXT Viewer */
+.nova-txt-viewer-wrap {
+  width: 100%;
+  border: 1px solid rgba(180, 215, 235, 0.12);
+  border-radius: 6px;
+  background: #060b11;
+  overflow: hidden;
+}
+
+.nova-txt-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #0a111a;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.1);
+  color: #8eaab8;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+}
+
+.nova-txt-viewer-content {
+  padding: 20px 24px;
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  line-height: 1.75;
+  color: #e2f1f8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* =========================================================
    MOBILE PREVIEW
    ========================================================= */
 

@@ -10,9 +10,11 @@ import {
   ArrowRight,
   CheckCircle2,
   Database,
+  Download,
   Eye,
   File,
   FileArchive,
+  FileCode,
   FileImage,
   FileSpreadsheet,
   FileText,
@@ -20,14 +22,18 @@ import {
   FolderOpen,
   FolderPlus,
   Grid2X2,
+  HardDrive,
   History,
+  Layers,
   Loader2,
   MoreHorizontal,
   Plus,
   RefreshCw,
   RotateCcw,
+  Scan,
   Search,
   Shield,
+  ShieldCheck,
   Trash2,
   Upload,
   X,
@@ -183,6 +189,246 @@ function isImageFile(
     getFileExtension(
       filename,
     ),
+  );
+}
+
+function isDocxFile(
+  filename = "",
+) {
+  return [
+    "doc",
+    "docx",
+  ].includes(
+    getFileExtension(
+      filename,
+    ),
+  );
+}
+
+function isSpreadsheetFile(
+  filename = "",
+) {
+  return [
+    "xlsx",
+    "xls",
+    "csv",
+  ].includes(
+    getFileExtension(
+      filename,
+    ),
+  );
+}
+
+function isTxtFile(
+  filename = "",
+) {
+  return [
+    "txt",
+    "md",
+    "json",
+    "py",
+    "js",
+    "html",
+    "css",
+    "c",
+    "cpp",
+    "java",
+    "sh",
+    "yaml",
+    "yml",
+    "log",
+  ].includes(
+    getFileExtension(
+      filename,
+    ),
+  );
+}
+
+function parseSpreadsheetData(
+  rawText = "",
+) {
+  if (!rawText || !rawText.trim()) return null;
+
+  const lines = rawText.split("\n");
+  const sheets = [];
+  let currentSheet = { name: "Sheet 1", rows: [] };
+
+  for (let rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const sheetMatch = line.match(/^\[SHEET\s*\d*:\s*(.*?)\]/i);
+    if (sheetMatch) {
+      if (currentSheet.rows.length > 0) {
+        sheets.push(currentSheet);
+      }
+      currentSheet = {
+        name: sheetMatch[1].trim() || `Sheet ${sheets.length + 1}`,
+        rows: [],
+      };
+      continue;
+    }
+
+    let rowContent = line;
+    const rowMatch = line.match(/^\[ROW\s*\d+\]\s*(.*)/i);
+    if (rowMatch) {
+      rowContent = rowMatch[1];
+    }
+
+    let cells = [];
+    if (rowContent.includes(" | ")) {
+      cells = rowContent.split(" | ").map((c) => c.trim());
+    } else if (rowContent.includes("\t")) {
+      cells = rowContent.split("\t").map((c) => c.trim());
+    } else if (rowContent.includes(",")) {
+      cells = rowContent.split(",").map((c) => c.trim());
+    } else {
+      cells = [rowContent];
+    }
+
+    if (cells.length > 0 && cells.some((c) => c !== "")) {
+      currentSheet.rows.push(cells);
+    }
+  }
+
+  if (currentSheet.rows.length > 0) {
+    sheets.push(currentSheet);
+  }
+
+  return sheets.length > 0 ? sheets : null;
+}
+
+function SpreadsheetPreview({ text }) {
+  const sheets = useMemo(() => parseSpreadsheetData(text), [text]);
+  const [activeSheetIdx, setActiveSheetIdx] = useState(0);
+
+  if (!sheets || sheets.length === 0) {
+    return (
+      <div className="nova-knowledge-preview-text-card">
+        <pre className="nova-knowledge-preview-content">
+          {text || "No readable content in spreadsheet."}
+        </pre>
+      </div>
+    );
+  }
+
+  const currentSheet = sheets[activeSheetIdx] || sheets[0];
+  const rows = currentSheet.rows;
+  const headerRow = rows[0] || [];
+  const bodyRows = rows.slice(1);
+
+  return (
+    <div className="nova-spreadsheet-wrap">
+      {sheets.length > 1 && (
+        <div className="nova-spreadsheet-tabs">
+          {sheets.map((sheet, idx) => (
+            <button
+              key={idx}
+              type="button"
+              className={`nova-spreadsheet-tab ${
+                idx === activeSheetIdx ? "active" : ""
+              }`}
+              onClick={() => setActiveSheetIdx(idx)}
+            >
+              {sheet.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="nova-spreadsheet-table-container">
+        <table className="nova-spreadsheet-table">
+          <thead>
+            <tr>
+              <th className="nova-spreadsheet-row-num">#</th>
+              {headerRow.map((cell, cIdx) => (
+                <th key={cIdx}>{cell || `Col ${cIdx + 1}`}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyRows.length > 0 ? (
+              bodyRows.map((row, rIdx) => (
+                <tr key={rIdx}>
+                  <td className="nova-spreadsheet-row-num">{rIdx + 1}</td>
+                  {headerRow.map((_, cIdx) => (
+                    <td key={cIdx}>
+                      {row[cIdx] !== undefined ? row[cIdx] : ""}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="nova-spreadsheet-row-num">1</td>
+                {headerRow.map((cell, cIdx) => (
+                  <td key={cIdx}>{cell}</td>
+                ))}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TxtViewerPreview({ text, filename }) {
+  const lines = useMemo(() => (text ? text.split("\n") : []), [text]);
+
+  return (
+    <div className="nova-txt-viewer-wrap">
+      <div className="nova-txt-viewer-header">
+        <span>{filename}</span>
+        <span>
+          {lines.length} {lines.length === 1 ? "line" : "lines"}
+        </span>
+      </div>
+      <pre className="nova-txt-viewer-content">
+        {text || "No content in text file."}
+      </pre>
+    </div>
+  );
+}
+
+function DocxSheetPreview({ text, filename }) {
+  if (!text || !text.trim()) {
+    return (
+      <div className="nova-empty-state nova-document-empty">
+        <FileText size={24} />
+        <strong>Empty Document</strong>
+        <span>No text could be extracted from this document file.</span>
+      </div>
+    );
+  }
+
+  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim());
+
+  return (
+    <div className="nova-document-sheet-wrap">
+      <div className="nova-document-sheet">
+        <h1 className="nova-document-sheet-title">{filename}</h1>
+        {paragraphs.map((para, idx) => {
+          const trimmed = para.trim();
+          if (
+            trimmed.length < 80 &&
+            (trimmed === trimmed.toUpperCase() ||
+              trimmed.endsWith(":") ||
+              idx === 0)
+          ) {
+            return (
+              <h2 key={idx} className="nova-document-sheet-heading">
+                {trimmed}
+              </h2>
+            );
+          }
+          return (
+            <p key={idx} className="nova-document-sheet-paragraph">
+              {trimmed}
+            </p>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -5121,20 +5367,26 @@ function KnowledgeVault() {
               }
             >
               <div className="nova-knowledge-modal-head">
-                <div>
-                  <span>
-                    LOCAL PREVIEW
-                  </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  {(() => {
+                    const FileIconComponent = getFileIcon(previewFile.filename);
+                    return <FileIconComponent size={20} style={{ color: "#6ddcff", flexShrink: 0 }} />;
+                  })()}
+                  <div>
+                    <span>
+                      LOCAL PREVIEW
+                    </span>
 
-                  <strong
-                    title={
-                      previewFile.filename
-                    }
-                  >
-                    {
-                      previewFile.filename
-                    }
-                  </strong>
+                    <strong
+                      title={
+                        previewFile.filename
+                      }
+                    >
+                      {
+                        previewFile.filename
+                      }
+                    </strong>
+                  </div>
                 </div>
 
                 <a
@@ -5153,11 +5405,18 @@ function KnowledgeVault() {
                     minHeight:
                       34,
                     padding:
-                      "0 10px",
+                      "0 12px",
                     margin:
                       "0 6px 0 auto",
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    gap:
+                      "6px",
                   }}
                 >
+                  <Download size={14} />
                   DOWNLOAD
                 </a>
 
@@ -5193,6 +5452,7 @@ function KnowledgeVault() {
                 <>
                   <div className="nova-knowledge-preview-meta">
                     <span>
+                      <FileText size={12} style={{ marginRight: 5, color: "#6ddcff" }} />
                       TYPE{" "}
                       <strong>
                         {(
@@ -5206,6 +5466,7 @@ function KnowledgeVault() {
                     </span>
 
                     <span>
+                      <Layers size={12} style={{ marginRight: 5, color: "#6ddcff" }} />
                       CHARACTERS{" "}
                       <strong>
                         {formatNumber(
@@ -5217,6 +5478,7 @@ function KnowledgeVault() {
                     </span>
 
                     <span>
+                      <File size={12} style={{ marginRight: 5, color: "#6ddcff" }} />
                       PAGES{" "}
                       <strong>
                         {formatNumber(
@@ -5233,6 +5495,7 @@ function KnowledgeVault() {
                     </span>
 
                     <span>
+                      <HardDrive size={12} style={{ marginRight: 5, color: "#6ddcff" }} />
                       SIZE{" "}
                       <strong>
                         {formatBytes(
@@ -5242,6 +5505,7 @@ function KnowledgeVault() {
                     </span>
 
                     <span>
+                      <ShieldCheck size={12} style={{ marginRight: 5, color: previewFile.indexed ? "#4ade80" : "#f59e0b" }} />
                       INDEX{" "}
                       <strong>
                         {previewFile.indexed
@@ -5253,6 +5517,7 @@ function KnowledgeVault() {
                     {previewData?.used_ocr !==
                       undefined && (
                       <span>
+                        <Scan size={12} style={{ marginRight: 5, color: "#6ddcff" }} />
                         OCR{" "}
                         <strong>
                           {previewData.used_ocr
@@ -5326,6 +5591,7 @@ function KnowledgeVault() {
                       ) ? (
                         <div className="nova-knowledge-preview-frame-wrap">
                           <iframe
+                            className="nova-knowledge-preview-frame"
                             title={`PDF preview of ${previewFile.filename}`}
                             src={`${previewAssetUrl}#page=1&view=FitH`}
                           />
@@ -5359,12 +5625,38 @@ function KnowledgeVault() {
                     </div>
                   ) : (
                     <div className="nova-knowledge-preview-body">
-                      <div className="nova-knowledge-preview-text-card">
-                        <pre className="nova-knowledge-preview-content">
-                          {previewData?.text ||
-                            "No readable text available for this file."}
-                        </pre>
-                      </div>
+                      {isSpreadsheetFile(
+                        previewFile.filename,
+                      ) ? (
+                        <SpreadsheetPreview
+                          text={
+                            previewData?.text
+                          }
+                        />
+                      ) : isDocxFile(
+                          previewFile.filename,
+                        ) ||
+                        isPdfFile(
+                          previewFile.filename,
+                        ) ? (
+                        <DocxSheetPreview
+                          text={
+                            previewData?.text
+                          }
+                          filename={
+                            previewFile.filename
+                          }
+                        />
+                      ) : (
+                        <TxtViewerPreview
+                          text={
+                            previewData?.text
+                          }
+                          filename={
+                            previewFile.filename
+                          }
+                        />
+                      )}
                     </div>
                   )}
                 </>
