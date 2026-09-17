@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import Any, Dict, List, Set
 
 from app.agents.planner.plan_models import (
@@ -11,6 +12,96 @@ from app.agents.tools.tool_registry import (
     get_tool,
 )
 
+
+# ---------------------------------------------------------------------------
+# MISSION CANCELLATION REGISTRY
+# ---------------------------------------------------------------------------
+
+MISSION_CANCELLATION_REGISTRY: Dict[str, bool] = {}
+
+MISSION_CANCELLATION_LOCK = Lock()
+
+
+def _normalize_mission_id(
+    mission_id: str | None,
+) -> str:
+    return str(
+        mission_id or ""
+    ).strip()
+
+
+def set_mission_cancelled(
+    mission_id: str | None,
+) -> bool:
+    """
+    Persist a backend cancellation request for a mission.
+
+    Cancellation is cooperative: a currently executing tool is allowed
+    to finish, and the executor prevents any remaining steps from starting.
+    """
+
+    normalized_id = _normalize_mission_id(
+        mission_id
+    )
+
+    if not normalized_id:
+        return False
+
+    with MISSION_CANCELLATION_LOCK:
+        MISSION_CANCELLATION_REGISTRY[
+            normalized_id
+        ] = True
+
+    return True
+
+
+def clear_mission_cancelled(
+    mission_id: str | None,
+) -> None:
+    """
+    Clear the cancellation state for a mission.
+    """
+
+    normalized_id = _normalize_mission_id(
+        mission_id
+    )
+
+    if not normalized_id:
+        return
+
+    with MISSION_CANCELLATION_LOCK:
+        MISSION_CANCELLATION_REGISTRY.pop(
+            normalized_id,
+            None,
+        )
+
+
+def is_mission_cancelled(
+    mission_id: str | None,
+) -> bool:
+    """
+    Check whether the mission has been explicitly cancelled.
+    """
+
+    normalized_id = _normalize_mission_id(
+        mission_id
+    )
+
+    if not normalized_id:
+        return False
+
+    with MISSION_CANCELLATION_LOCK:
+        return bool(
+            MISSION_CANCELLATION_REGISTRY.get(
+                normalized_id,
+                False,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# EXECUTION RESULT
+# ---------------------------------------------------------------------------
 
 class ExecutionResult:
     """
@@ -31,7 +122,9 @@ class ExecutionResult:
         self.blocked_steps = blocked_steps
         self.context = context or {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(
+        self,
+    ) -> Dict[str, Any]:
         return {
             "plan_id": self.plan.id,
             "status": self.plan.status.value,
@@ -42,27 +135,42 @@ class ExecutionResult:
         }
 
 
+# ---------------------------------------------------------------------------
+# AGENT EXECUTOR
+# ---------------------------------------------------------------------------
+
 class AgentExecutor:
     """
     Safe orchestration layer for NOVA agent plans.
 
     Responsibilities:
+
     - dependency-aware execution
+    - deterministic execution ordering
     - tool allow-list enforcement
     - confirmation gates
     - execution state tracking
     - context propagation
+    - mission cancellation
     - safe failure handling
+    - dependency deadlock protection
 
-    Tool handlers receive a private `_context` object
-    containing results from previously completed steps.
+    Tool handlers receive a private `_context` object containing:
+
+    - plan objective
+    - current step metadata
+    - results from previously completed steps
+
+    This allows later steps to consume actual results from earlier steps.
     """
 
     def __init__(
         self,
         auto_confirm: bool = False,
     ) -> None:
-        self.auto_confirm = auto_confirm
+        self.auto_confirm = bool(
+            auto_confirm
+        )
 
     # ------------------------------------------------------------------
     # DEPENDENCY HELPERS
@@ -83,10 +191,11 @@ class AgentExecutor:
         step_map: Dict[str, PlanStep],
     ) -> bool:
         """
-        Check whether every dependency has completed.
+        Check whether every dependency has completed successfully.
         """
 
         for dependency_id in step.dependencies:
+
             dependency = step_map.get(
                 dependency_id
             )
@@ -108,10 +217,12 @@ class AgentExecutor:
         step_map: Dict[str, PlanStep],
     ) -> bool:
         """
-        Check whether any dependency failed or was skipped.
+        Check whether any dependency failed, was skipped,
+        or no longer exists.
         """
 
         for dependency_id in step.dependencies:
+
             dependency = step_map.get(
                 dependency_id
             )
@@ -119,10 +230,10 @@ class AgentExecutor:
             if dependency is None:
                 return True
 
-            if dependency.status in (
+            if dependency.status in {
                 PlanStepStatus.FAILED,
                 PlanStepStatus.SKIPPED,
-            ):
+            }:
                 return True
 
         return False
@@ -136,7 +247,7 @@ class AgentExecutor:
         step: PlanStep,
     ) -> ToolDefinition:
         """
-        Resolve and validate a tool from the allow-list.
+        Resolve and validate a tool from NOVA's allow-list.
         """
 
         if not step.tool:
@@ -165,7 +276,7 @@ class AgentExecutor:
         tool: ToolDefinition,
     ) -> bool:
         """
-        Determine whether execution requires confirmation.
+        Determine whether a tool requires an explicit confirmation gate.
         """
 
         if not tool.requires_confirmation:
@@ -183,19 +294,36 @@ class AgentExecutor:
         context: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Build the context exposed to a tool handler.
+        Build the private context exposed to a tool handler.
 
         The handler receives:
-        - completed step results
+
+        - the overall plan objective
         - current step metadata
-        - the original plan objective
+        - completed step results
         """
 
+        completed_results: Dict[
+            str,
+            Any,
+        ] = {}
+
+        for key, value in context.items():
+
+            if str(
+                key
+            ).startswith(
+                "__"
+            ):
+                continue
+
+            completed_results[
+                key
+            ] = value
+
         return {
-            "plan_objective": (
-                context.get(
-                    "__plan_objective"
-                )
+            "plan_objective": context.get(
+                "__plan_objective"
             ),
             "current_step": {
                 "id": step.id,
@@ -203,11 +331,7 @@ class AgentExecutor:
                 "description": step.description,
                 "tool": step.tool,
             },
-            "steps": {
-                key: value
-                for key, value in context.items()
-                if not key.startswith("__")
-            },
+            "steps": completed_results,
         }
 
     # ------------------------------------------------------------------
@@ -233,7 +357,7 @@ class AgentExecutor:
             tool
         ):
             raise PermissionError(
-                f"Confirmation required before executing "
+                "Confirmation required before executing "
                 f"tool '{tool.name}'."
             )
 
@@ -247,15 +371,133 @@ class AgentExecutor:
             step.inputs
         )
 
-        inputs["_context"] = (
-            self._build_step_context(
-                step,
-                context,
-            )
+        inputs[
+            "_context"
+        ] = self._build_step_context(
+            step=step,
+            context=context,
         )
 
         return tool.handler(
             **inputs
+        )
+
+    # ------------------------------------------------------------------
+    # EXECUTION STATE HELPERS
+    # ------------------------------------------------------------------
+
+    def _mark_remaining_steps_skipped(
+        self,
+        plan: AgentPlan,
+        remaining: Set[str],
+        blocked_steps: List[str],
+        reason: str,
+    ) -> None:
+        """
+        Mark all not-yet-started steps as skipped.
+        """
+
+        step_map = self._step_map(
+            plan
+        )
+
+        for step_id in list(
+            remaining
+        ):
+            step = step_map.get(
+                step_id
+            )
+
+            if step is None:
+                remaining.remove(
+                    step_id
+                )
+                continue
+
+            if step.status in {
+                PlanStepStatus.COMPLETED,
+                PlanStepStatus.FAILED,
+                PlanStepStatus.SKIPPED,
+            }:
+                remaining.remove(
+                    step_id
+                )
+                continue
+
+            step.status = (
+                PlanStepStatus.SKIPPED
+            )
+
+            step.error = reason
+
+            if step.id not in blocked_steps:
+                blocked_steps.append(
+                    step.id
+                )
+
+            remaining.remove(
+                step_id
+            )
+
+    def _public_context(
+        self,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Remove executor-private metadata before returning execution data.
+        """
+
+        return {
+            key: value
+            for key, value in context.items()
+            if not str(
+                key
+            ).startswith(
+                "__"
+            )
+        }
+
+    # ------------------------------------------------------------------
+    # CANCELLATION
+    # ------------------------------------------------------------------
+
+    def _cancel_execution(
+        self,
+        plan: AgentPlan,
+        completed_steps: List[str],
+        failed_steps: List[str],
+        blocked_steps: List[str],
+        context: Dict[str, Any],
+        remaining: Set[str],
+        reason: str,
+    ) -> ExecutionResult:
+        """
+        Stop an in-flight plan.
+
+        Important:
+        Completed results are preserved so Mission Control can still inspect
+        everything that was successfully executed before STOP was requested.
+        """
+
+        self._mark_remaining_steps_skipped(
+            plan=plan,
+            remaining=remaining,
+            blocked_steps=blocked_steps,
+            reason=reason,
+        )
+
+        plan.status = (
+            PlanStatus.CANCELLED
+        )
+
+        return ExecutionResult(
+            plan=plan,
+            completed_steps=completed_steps,
+            failed_steps=failed_steps,
+            blocked_steps=blocked_steps,
+            context=self._public_context(
+                context
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -266,20 +508,85 @@ class AgentExecutor:
         self,
         plan: AgentPlan,
         context: Dict[str, Any] | None = None,
+        mission_id: str | None = None,
     ) -> ExecutionResult:
         """
         Execute a plan in dependency order.
 
-        Results from completed steps are stored in context
-        and made available to later dependent steps.
+        Results from completed steps are stored in context and made available
+        to every downstream dependent step.
+
+        Mission cancellation is cooperative:
+        a running tool is allowed to finish, then the executor stops starting
+        subsequent work.
         """
 
         if context is None:
             context = {}
 
-        context["__plan_objective"] = (
-            plan.objective
+        # --------------------------------------------------------------
+        # Resolve mission identity.
+        # --------------------------------------------------------------
+
+        if not mission_id:
+
+            mission_context = context.get(
+                "mission"
+            )
+
+            if isinstance(
+                mission_context,
+                dict,
+            ):
+                mission_id = (
+                    mission_context.get(
+                        "mission_id"
+                    )
+                )
+
+            if not mission_id:
+                mission_id = (
+                    context.get(
+                        "mission_id"
+                    )
+                )
+
+        normalized_mission_id = (
+            _normalize_mission_id(
+                mission_id
+            )
         )
+
+        if not normalized_mission_id:
+            normalized_mission_id = None
+
+        # --------------------------------------------------------------
+        # Prepare private executor metadata.
+        # --------------------------------------------------------------
+
+        context[
+            "__plan_objective"
+        ] = plan.objective
+
+        context[
+            "__execution_status"
+        ] = "RUNNING"
+
+        context[
+            "__execution_cancelled"
+        ] = False
+
+        context[
+            "__execution_started_steps"
+        ] = []
+
+        context[
+            "__execution_completed_steps"
+        ] = []
+
+        # --------------------------------------------------------------
+        # Start plan.
+        # --------------------------------------------------------------
 
         plan.status = (
             PlanStatus.RUNNING
@@ -288,6 +595,12 @@ class AgentExecutor:
         step_map = self._step_map(
             plan
         )
+
+        # Keep deterministic plan order.
+        ordered_step_ids: List[str] = [
+            step.id
+            for step in plan.steps
+        ]
 
         completed_steps: List[str] = []
         failed_steps: List[str] = []
@@ -298,22 +611,130 @@ class AgentExecutor:
             for step in plan.steps
         }
 
+        # --------------------------------------------------------------
+        # Main scheduler.
+        # --------------------------------------------------------------
+
         while remaining:
+
+            # ----------------------------------------------------------
+            # Mission cancellation before starting another scheduler pass.
+            # ----------------------------------------------------------
+
+            if (
+                normalized_mission_id
+                and is_mission_cancelled(
+                    normalized_mission_id
+                )
+            ):
+
+                context[
+                    "__execution_status"
+                ] = "CANCELLED"
+
+                context[
+                    "__execution_cancelled"
+                ] = True
+
+                result = (
+                    self._cancel_execution(
+                        plan=plan,
+                        completed_steps=completed_steps,
+                        failed_steps=failed_steps,
+                        blocked_steps=blocked_steps,
+                        context=context,
+                        remaining=remaining,
+                        reason=(
+                            "Mission execution was stopped by the user."
+                        ),
+                    )
+                )
+
+                clear_mission_cancelled(
+                    normalized_mission_id
+                )
+
+                return result
+
             progress = False
 
-            for step_id in list(remaining):
+            # ----------------------------------------------------------
+            # Evaluate steps in original plan order.
+            # ----------------------------------------------------------
+
+            for step_id in ordered_step_ids:
+
+                if step_id not in remaining:
+                    continue
+
                 step = step_map[
                     step_id
                 ]
 
                 # ------------------------------------------------------
-                # Failed dependency
+                # Cancellation immediately before a new step.
+                # ------------------------------------------------------
+
+                if (
+                    normalized_mission_id
+                    and is_mission_cancelled(
+                        normalized_mission_id
+                    )
+                ):
+
+                    context[
+                        "__execution_status"
+                    ] = "CANCELLED"
+
+                    context[
+                        "__execution_cancelled"
+                    ] = True
+
+                    result = (
+                        self._cancel_execution(
+                            plan=plan,
+                            completed_steps=completed_steps,
+                            failed_steps=failed_steps,
+                            blocked_steps=blocked_steps,
+                            context=context,
+                            remaining=remaining,
+                            reason=(
+                                "Mission execution was stopped by the user."
+                            ),
+                        )
+                    )
+
+                    clear_mission_cancelled(
+                        normalized_mission_id
+                    )
+
+                    return result
+
+                # ------------------------------------------------------
+                # Already handled step.
+                # ------------------------------------------------------
+
+                if step.status in {
+                    PlanStepStatus.COMPLETED,
+                    PlanStepStatus.FAILED,
+                    PlanStepStatus.SKIPPED,
+                }:
+
+                    remaining.remove(
+                        step.id
+                    )
+
+                    continue
+
+                # ------------------------------------------------------
+                # Failed or skipped dependency.
                 # ------------------------------------------------------
 
                 if self._has_failed_dependency(
-                    step,
-                    step_map,
+                    step=step,
+                    step_map=step_map,
                 ):
+
                     step.status = (
                         PlanStepStatus.SKIPPED
                     )
@@ -323,9 +744,10 @@ class AgentExecutor:
                         "was skipped."
                     )
 
-                    blocked_steps.append(
-                        step.id
-                    )
+                    if step.id not in blocked_steps:
+                        blocked_steps.append(
+                            step.id
+                        )
 
                     remaining.remove(
                         step.id
@@ -336,37 +758,53 @@ class AgentExecutor:
                     continue
 
                 # ------------------------------------------------------
-                # Wait for dependencies
+                # Dependency not finished yet.
                 # ------------------------------------------------------
 
                 if not self._dependencies_completed(
-                    step,
-                    step_map,
+                    step=step,
+                    step_map=step_map,
                 ):
                     continue
 
                 # ------------------------------------------------------
-                # Run step
+                # Start step.
                 # ------------------------------------------------------
 
                 step.status = (
                     PlanStepStatus.RUNNING
                 )
 
-                try:
-                    result = self.execute_step(
-                        step,
-                        context,
+                started_steps = context.get(
+                    "__execution_started_steps"
+                )
+
+                if isinstance(
+                    started_steps,
+                    list,
+                ):
+                    started_steps.append(
+                        step.id
                     )
 
+                try:
+
+                    result = self.execute_step(
+                        step=step,
+                        context=context,
+                    )
+
+                    # --------------------------------------------------
+                    # Preserve the raw real tool result.
+                    # --------------------------------------------------
+
                     step.result = result
+
                     step.status = (
                         PlanStepStatus.COMPLETED
                     )
 
-                    # --------------------------------------------------
-                    # Make the result available to downstream steps.
-                    # --------------------------------------------------
+                    step.error = None
 
                     context[
                         step.id
@@ -376,7 +814,22 @@ class AgentExecutor:
                         step.id
                     )
 
+                    completed_context_steps = (
+                        context.get(
+                            "__execution_completed_steps"
+                        )
+                    )
+
+                    if isinstance(
+                        completed_context_steps,
+                        list,
+                    ):
+                        completed_context_steps.append(
+                            step.id
+                        )
+
                 except PermissionError as exc:
+
                     step.status = (
                         PlanStepStatus.FAILED
                     )
@@ -390,6 +843,7 @@ class AgentExecutor:
                     )
 
                 except Exception as exc:
+
                     step.status = (
                         PlanStepStatus.FAILED
                     )
@@ -402,20 +856,71 @@ class AgentExecutor:
                         step.id
                     )
 
-                remaining.remove(
-                    step.id
-                )
+                finally:
 
-                progress = True
+                    # The step has now been handled, regardless of outcome.
+                    remaining.remove(
+                        step.id
+                    )
+
+                    progress = True
+
+                # ------------------------------------------------------
+                # A STOP request may have arrived while this tool was
+                # executing. Do not start another step.
+                # ------------------------------------------------------
+
+                if (
+                    normalized_mission_id
+                    and is_mission_cancelled(
+                        normalized_mission_id
+                    )
+                ):
+
+                    context[
+                        "__execution_status"
+                    ] = "CANCELLED"
+
+                    context[
+                        "__execution_cancelled"
+                    ] = True
+
+                    result = (
+                        self._cancel_execution(
+                            plan=plan,
+                            completed_steps=completed_steps,
+                            failed_steps=failed_steps,
+                            blocked_steps=blocked_steps,
+                            context=context,
+                            remaining=remaining,
+                            reason=(
+                                "Mission execution was stopped by the user."
+                            ),
+                        )
+                    )
+
+                    clear_mission_cancelled(
+                        normalized_mission_id
+                    )
+
+                    return result
 
             # ----------------------------------------------------------
-            # Dependency deadlock protection.
+            # Dependency deadlock / invalid dependency graph protection.
             # ----------------------------------------------------------
 
             if not progress:
-                for step_id in list(
-                    remaining
-                ):
+
+                deadlock_reason = (
+                    "Execution stopped because the dependency graph "
+                    "could not make further progress."
+                )
+
+                for step_id in ordered_step_ids:
+
+                    if step_id not in remaining:
+                        continue
+
                     step = step_map[
                         step_id
                     ]
@@ -424,22 +929,64 @@ class AgentExecutor:
                         PlanStepStatus.SKIPPED
                     )
 
-                    step.error = (
-                        "Execution stopped because "
-                        "the dependency graph could "
-                        "not make further progress."
-                    )
+                    step.error = deadlock_reason
 
-                    blocked_steps.append(
-                        step.id
-                    )
+                    if step.id not in blocked_steps:
+                        blocked_steps.append(
+                            step.id
+                        )
 
                     remaining.remove(
                         step.id
                     )
 
+                context[
+                    "__execution_status"
+                ] = "FAILED"
+
+                break
+
         # --------------------------------------------------------------
-        # Determine final plan status.
+        # Final cancellation check.
+        # --------------------------------------------------------------
+
+        if (
+            normalized_mission_id
+            and is_mission_cancelled(
+                normalized_mission_id
+            )
+        ):
+
+            context[
+                "__execution_status"
+            ] = "CANCELLED"
+
+            context[
+                "__execution_cancelled"
+            ] = True
+
+            result = (
+                self._cancel_execution(
+                    plan=plan,
+                    completed_steps=completed_steps,
+                    failed_steps=failed_steps,
+                    blocked_steps=blocked_steps,
+                    context=context,
+                    remaining=remaining,
+                    reason=(
+                        "Mission execution was stopped by the user."
+                    ),
+                )
+            )
+
+            clear_mission_cancelled(
+                normalized_mission_id
+            )
+
+            return result
+
+        # --------------------------------------------------------------
+        # Determine final status.
         # --------------------------------------------------------------
 
         if failed_steps:
@@ -447,22 +994,37 @@ class AgentExecutor:
                 PlanStatus.FAILED
             )
 
+            context[
+                "__execution_status"
+            ] = "FAILED"
+
         elif blocked_steps:
             plan.status = (
                 PlanStatus.FAILED
             )
+
+            context[
+                "__execution_status"
+            ] = "FAILED"
 
         else:
             plan.status = (
                 PlanStatus.COMPLETED
             )
 
-        # Do not expose internal metadata.
-        public_context = {
-            key: value
-            for key, value in context.items()
-            if not key.startswith("__")
-        }
+            context[
+                "__execution_status"
+            ] = "COMPLETED"
+
+        # --------------------------------------------------------------
+        # Return only public execution context.
+        # --------------------------------------------------------------
+
+        public_context = (
+            self._public_context(
+                context
+            )
+        )
 
         return ExecutionResult(
             plan=plan,
@@ -472,5 +1034,9 @@ class AgentExecutor:
             context=public_context,
         )
 
+
+# ---------------------------------------------------------------------------
+# SHARED EXECUTOR INSTANCE
+# ---------------------------------------------------------------------------
 
 agent_executor = AgentExecutor()

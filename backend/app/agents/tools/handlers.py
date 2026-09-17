@@ -207,8 +207,12 @@ def document_reader_handler(
             "document_reader requires a file_path."
         )
 
-    result = extract_document(
+    resolved_path = _resolve_workspace_file(
         file_path
+    )
+
+    result = extract_document(
+        str(resolved_path)
     )
 
     return result.to_dict()
@@ -1156,131 +1160,617 @@ def _add_content_to_document(
         index = next_index
 
 
+# ---------------------------------------------------------------------------
+# EVIDENCE REVIEW REPORT SYNTHESIS
+# ---------------------------------------------------------------------------
+
+_EVIDENCE_READER_TOOLS = {
+    "document_reader",
+    "file_reader",
+    "spreadsheet_reader",
+    "ocr",
+}
+
+_EVIDENCE_NON_SOURCE_TOOLS = {
+    "document_writer",
+    "file_writer",
+    "pdf_writer",
+    "spreadsheet_writer",
+    "csv_writer",
+    "pptx_writer",
+    "visualization_writer",
+    "code_executor",
+    "knowledge_search",
+    "spreadsheet_analysis",
+}
+
+
+def _evidence_result_is_source_reader(
+    result: Dict[str, Any],
+) -> bool:
+    """
+    Determine whether an execution result represents a real source-file
+    reader result rather than a generated artifact, analysis step, or
+    unrelated execution result.
+    """
+
+    if not isinstance(result, dict):
+        return False
+
+    tool = str(
+        result.get(
+            "tool",
+            "",
+        )
+    ).strip().lower()
+
+    if tool in _EVIDENCE_NON_SOURCE_TOOLS:
+        return False
+
+    if tool in _EVIDENCE_READER_TOOLS:
+        return True
+
+    file_path = str(
+        result.get(
+            "file_path",
+            "",
+        )
+    ).strip().replace(
+        "\\",
+        "/",
+    )
+
+    if file_path.lower().startswith("output/"):
+        return False
+
+    return bool(
+        result.get("content")
+        or result.get("text")
+        or result.get("extracted_text")
+        or result.get("document_text")
+        or isinstance(result.get("sheets"), list)
+    )
+
+
+def _evidence_result_file_name(
+    result: Dict[str, Any],
+    fallback_index: int,
+) -> str:
+    """
+    Resolve a human-readable source filename from actual reader metadata.
+    """
+
+    file_name = (
+        result.get("file_name")
+        or result.get("filename")
+        or result.get("name")
+        or ""
+    )
+
+    if not str(file_name).strip():
+        file_path = str(
+            result.get(
+                "file_path",
+                "",
+            )
+        ).strip()
+
+        if file_path:
+            file_name = Path(
+                file_path
+            ).name
+
+    if not str(file_name).strip():
+        file_name = f"File {fallback_index}"
+
+    return Path(
+        str(file_name)
+    ).name
+
+
+def _evidence_result_extension(
+    result: Dict[str, Any],
+    file_name: str,
+) -> str:
+    """
+    Resolve the source extension from the actual filename or metadata.
+    """
+
+    extension = Path(
+        file_name
+    ).suffix.lower()
+
+    if extension:
+        return extension
+
+    metadata_type = str(
+        result.get(
+            "file_type",
+            "",
+        )
+    ).strip().lower()
+
+    if metadata_type == "xlsx":
+        return ".xlsx"
+
+    if metadata_type == "csv":
+        return ".csv"
+
+    if metadata_type == "pdf":
+        return ".pdf"
+
+    if metadata_type == "docx":
+        return ".docx"
+
+    return ""
+
+
 def _synthesize_evidence_report_from_context(
     context: Dict[str, Any],
     title: str = "File Review Report",
 ) -> str:
     """
-    Synthesize a structured Markdown report from completed reader step results in _context.
+    Build a concise professional DOCX-ready report from actual completed
+    reader results.
+
+    Important:
+    - only completed source-reader results are included
+    - generated output files are excluded
+    - internal workspace paths are excluded from report prose
+    - raw rows / raw document dumps are not reproduced
+    - the document title is supplied separately by document_writer_handler
     """
+
     if not isinstance(context, dict):
         return "No evidence reader results available."
 
-    steps = context.get("steps", {})
-    if not isinstance(steps, dict) or not steps:
+    steps = context.get(
+        "steps",
+        {}
+    )
+
+    if not isinstance(
+        steps,
+        dict,
+    ) or not steps:
         return "No completed file reader steps were found."
 
     lines: List[str] = [
-        f"# {title or 'File Review Report'}",
-        "",
         "## Executive Summary",
-        "This report synthesizes the detailed evidence review of all supplied workspace files. "
-        "Each file was inspected and analyzed using NOVA's local reader engines based on its actual extracted content.",
+        (
+            "This report summarizes the actual contents returned by NOVA's "
+            "completed local file-reading steps."
+        ),
         "",
-        "## File-by-File Evidence Analysis",
     ]
 
     file_index = 1
-    for step_id, result in steps.items():
-        if not isinstance(result, dict):
+    included_files = 0
+
+    for _, result in steps.items():
+
+        if not _evidence_result_is_source_reader(
+            result
+        ):
             continue
 
-        file_name = (
-            result.get("file_name")
-            or result.get("filename")
-            or Path(result.get("file_path", f"file_{file_index}")).name
+        file_name = _evidence_result_file_name(
+            result,
+            file_index,
         )
-        ext = Path(file_name).suffix.lower()
 
-        lines.append(f"\n### {file_index}. {file_name}")
+        extension = _evidence_result_extension(
+            result,
+            file_name,
+        )
+
+        if extension not in {
+            ".xlsx",
+            ".csv",
+            ".pdf",
+            ".docx",
+            ".txt",
+            ".md",
+            ".json",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".html",
+            ".css",
+            ".xml",
+            ".yaml",
+            ".yml",
+            ".log",
+        }:
+            continue
+
+        included_files += 1
+
+        lines.append(
+            f"## {file_index}. {file_name}"
+        )
+
         file_index += 1
 
-        # Check for spreadsheet structure
-        if "sheets" in result and isinstance(result["sheets"], list):
-            sheet_count = result.get("sheet_count", len(result["sheets"]))
-            lines.append(f"- **What it is**: Excel/CSV Workbook containing {sheet_count} sheet(s).")
-            lines.append("- **Sheet Details**:")
-            for s in result["sheets"]:
-                if not isinstance(s, dict):
-                    continue
-                sname = s.get("sheet_name", "Sheet")
-                headers = s.get("headers", [])
-                rcount = s.get("row_count", 0)
-                ccount = s.get("column_count", len(headers))
-                lines.append(f"  - **{sname}**: {rcount} data rows x {ccount} columns.")
+        # ------------------------------------------------------------------
+        # SPREADSHEET
+        # ------------------------------------------------------------------
+
+        if extension in {
+            ".xlsx",
+            ".csv",
+        } and isinstance(
+            result.get("sheets"),
+            list,
+        ):
+
+            sheets = [
+                sheet
+                for sheet in result.get(
+                    "sheets",
+                    [],
+                )
+                if isinstance(
+                    sheet,
+                    dict,
+                )
+            ]
+
+            sheet_names = [
+                str(
+                    sheet.get(
+                        "sheet_name",
+                        "",
+                    )
+                ).strip()
+                for sheet in sheets
+                if str(
+                    sheet.get(
+                        "sheet_name",
+                        "",
+                    )
+                ).strip()
+            ]
+
+            lines.append(
+                "### What it is"
+            )
+
+            if extension == ".xlsx":
+                lines.append(
+                    "An Excel workbook containing structured tabular data."
+                )
+            else:
+                lines.append(
+                    "A CSV file containing structured tabular data."
+                )
+
+            lines.append(
+                "### What it is about"
+            )
+
+            if sheet_names:
+                lines.append(
+                    "The data is organized across "
+                    + ", ".join(
+                        sheet_names[:8]
+                    )
+                    + "."
+                )
+            else:
+                lines.append(
+                    "The file contains structured tabular information."
+                )
+
+            lines.append(
+                "### What it contains"
+            )
+
+            for sheet in sheets[:8]:
+
+                sheet_name = str(
+                    sheet.get(
+                        "sheet_name",
+                        "Sheet",
+                    )
+                ).strip() or "Sheet"
+
+                headers = [
+                    str(
+                        header
+                    ).strip()
+                    for header in (
+                        sheet.get(
+                            "headers",
+                        )
+                        or []
+                    )
+                    if str(
+                        header
+                    ).strip()
+                ][:8]
+
+                row_count = sheet.get(
+                    "row_count"
+                )
+
+                column_count = sheet.get(
+                    "column_count"
+                )
+
+                detail = (
+                    f"**{sheet_name}**"
+                )
+
+                if (
+                    row_count is not None
+                    and column_count is not None
+                ):
+                    detail += (
+                        f" contains {row_count} data rows "
+                        f"across {column_count} columns"
+                    )
+
                 if headers:
-                    lines.append(f"    - Columns: {', '.join(str(h) for h in headers)}")
-                rows = s.get("rows", [])
-                if rows:
-                    lines.append("    - Sample records:")
-                    for r in rows[:4]:
-                        if isinstance(r, (list, tuple)):
-                            r_str = " | ".join("" if v is None else str(v) for v in r)
-                        else:
-                            r_str = str(r)
-                        lines.append(f"      - {r_str}")
-            lines.append("")
+                    detail += (
+                        "; key columns include "
+                        + ", ".join(headers)
+                    )
+
+                lines.append(
+                    "- "
+                    + detail
+                    + "."
+                )
+
+            lines.append(
+                "The report summarizes workbook structure and meaningful fields rather than reproducing raw rows."
+            )
+
+            lines.append(
+                ""
+            )
+
             continue
 
-        # Extract text content for documents / text / code / images
+        # ------------------------------------------------------------------
+        # TEXT-BASED DOCUMENTS / IMAGES
+        # ------------------------------------------------------------------
+
         extracted_text = (
             result.get("content")
             or result.get("text")
             or result.get("extracted_text")
+            or result.get("document_text")
             or ""
         )
-        if not isinstance(extracted_text, str):
-            extracted_text = str(extracted_text)
 
-        extracted_text = extracted_text.strip()
+        extracted_text = str(
+            extracted_text or ""
+        ).strip()
 
-        if ext in {".css", ".json", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".xml", ".yaml", ".yml", ".log"}:
-            raw_lines = [l for l in extracted_text.splitlines() if l.strip()]
-            line_count = len(raw_lines)
-            if ext == ".css":
-                selectors = re.findall(r"([\.#a-zA-Z0-9_\-\s,]+)\s*\{", extracted_text)
-                clean_sel = [s.strip() for s in selectors if s.strip() and not s.strip().startswith("@")][:12]
-                lines.append(f"- **What it is**: Frontend CSS Stylesheet ({line_count} lines).")
-                lines.append("- **What it contains**: Defines UI theme, colors, typography, layout rules, animations, and responsive components.")
-                if clean_sel:
-                    lines.append(f"- **Key Selectors**: {', '.join(clean_sel)}")
-            elif ext == ".json":
-                try:
-                    parsed = json.loads(extracted_text)
-                    if isinstance(parsed, dict):
-                        keys = list(parsed.keys())
-                        lines.append(f"- **What it is**: JSON Data/Configuration file ({line_count} lines).")
-                        lines.append(f"- **Key Fields**: {', '.join(keys[:15])}")
-                    else:
-                        lines.append(f"- **What it is**: JSON Data structure ({line_count} lines).")
-                except Exception:
-                    lines.append(f"- **What it is**: JSON file ({line_count} lines).")
-            elif ext in {".py", ".js", ".ts", ".jsx", ".tsx"}:
-                funcs = re.findall(r"(?:def|function|const|class)\s+([a-zA-Z0-9_]+)", extracted_text)
-                func_list = sorted(list(set(funcs)))[:12]
-                lines.append(f"- **What it is**: {ext.lstrip('.').upper()} Source Code module ({line_count} lines).")
-                lines.append("- **What it contains**: Implementation logic for application functionality.")
-                if func_list:
-                    lines.append(f"- **Declared Symbols**: {', '.join(func_list)}")
-            else:
-                lines.append(f"- **What it is**: {ext.lstrip('.').upper()} text file ({line_count} lines).")
-                lines.append(f"- **Summary**: {extracted_text[:400]}")
+        if extension == ".pdf":
+            file_type = "A PDF document."
+        elif extension == ".docx":
+            file_type = "A Word document."
+        elif extension in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+        }:
+            file_type = "An image file."
+        elif extension == ".txt":
+            file_type = "A plain-text file."
+        elif extension == ".md":
+            file_type = "A Markdown document."
+        elif extension == ".json":
+            file_type = "A JSON data or configuration file."
+        elif extension in {
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".css",
+            ".html",
+        }:
+            file_type = (
+                f"A {extension.lstrip('.').upper()} source file."
+            )
         else:
-            doc_type = "PDF document" if ext == ".pdf" else ("Word document" if ext == ".docx" else ("Image file" if ext in {".png", ".jpg", ".jpeg"} else "Text document"))
-            lines.append(f"- **What it is**: {doc_type}.")
-            if extracted_text:
-                preview = extracted_text[:1200].replace("\n\n", "\n")
-                lines.append(f"- **What it contains**:\n{preview}")
-            else:
-                lines.append("- **What it contains**: No readable text extracted.")
+            file_type = (
+                f"A {extension.lstrip('.').upper()} text file."
+                if extension
+                else "A locally read file."
+            )
 
-        lines.append("")
+        lines.append(
+            "### What it is"
+        )
 
-    lines.append("## Conclusion")
-    lines.append("All attached evidence files were thoroughly analyzed using NOVA's sovereign local engines. "
-                 "The findings above represent the verified content extracted from each file.")
+        lines.append(
+            file_type
+        )
 
-    return "\n".join(lines)
+        compact = re.sub(
+            r"\[\s*PAGE\s+\d+\s*\]",
+            " ",
+            extracted_text,
+            flags=re.I,
+        )
+
+        compact = re.sub(
+            r"(?im)^\s*(?:file|file path|workspace|tool|verification|verification status)\s*:\s*.*$",
+            "",
+            compact,
+        )
+
+        compact = re.sub(
+            r"\s+",
+            " ",
+            compact,
+        ).strip()
+
+        if not compact:
+
+            lines.append(
+                "### What it is about"
+            )
+
+            lines.append(
+                "No readable subject could be established from the extracted content."
+            )
+
+            lines.append(
+                "### What it contains"
+            )
+
+            lines.append(
+                "No readable content was returned by the local extractor."
+            )
+
+            lines.append(
+                ""
+            )
+
+            continue
+
+        sentences = re.split(
+            r"(?<=[.!?])\s+",
+            compact,
+        )
+
+        sentences = [
+            sentence.strip()
+            for sentence in sentences
+            if sentence.strip()
+        ]
+
+        lines.append(
+            "### What it is about"
+        )
+
+        about = " ".join(
+            sentences[:2]
+        )
+
+        if len(about) > 650:
+            about = (
+                about[:647]
+                .rsplit(
+                    " ",
+                    1,
+                )[0]
+                + "..."
+            )
+
+        lines.append(
+            about
+        )
+
+        lines.append(
+            "### What it contains"
+        )
+
+        headings: List[str] = []
+
+        for raw_line in extracted_text.splitlines():
+
+            candidate = raw_line.strip()
+
+            candidate = re.sub(
+                r"^\s*#{1,6}\s*",
+                "",
+                candidate,
+            )
+
+            candidate = candidate.strip(
+                " -*•"
+            )
+
+            if (
+                candidate
+                and len(candidate) <= 100
+                and (
+                    raw_line.strip().startswith(
+                        "#"
+                    )
+                    or candidate.endswith(
+                        ":"
+                    )
+                )
+                and candidate not in headings
+            ):
+                headings.append(
+                    candidate.rstrip(
+                        ":"
+                    ).strip()
+                )
+
+            if len(headings) >= 8:
+                break
+
+        if (
+            headings
+            and extension in {
+                ".pdf",
+                ".docx",
+                ".md",
+            }
+        ):
+            lines.append(
+                "Major sections or topics include "
+                + ", ".join(
+                    headings
+                )
+                + "."
+            )
+
+        content_summary = " ".join(
+            sentences[:4]
+        )
+
+        if len(content_summary) > 1000:
+            content_summary = (
+                content_summary[:997]
+                .rsplit(
+                    " ",
+                    1,
+                )[0]
+                + "..."
+            )
+
+        lines.append(
+            content_summary
+        )
+
+        lines.append(
+            ""
+        )
+
+    if included_files == 0:
+        return (
+            "No completed source-file reader results were found."
+        )
+
+    lines.extend(
+        [
+            "## Conclusion",
+            (
+                "The report reflects the actual content returned by NOVA's "
+                "completed local file-reading steps."
+            ),
+        ]
+    )
+
+    return "\n".join(
+        lines
+    ).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -1299,16 +1789,33 @@ def document_writer_handler(
             "document_writer requires a file_path."
         )
 
-    _context = kwargs.get("_context")
-    if (content == "__EVIDENCE_REVIEW_REPORT__" or not str(content or "").strip()) and isinstance(_context, dict):
-        content = _synthesize_evidence_report_from_context(_context, title=title or "File Review Report")
+    _context = kwargs.get(
+        "_context"
+    )
+
+    if (
+        content == "__EVIDENCE_REVIEW_REPORT__"
+        or not str(content or "").strip()
+    ) and isinstance(
+        _context,
+        dict,
+    ):
+        content = _synthesize_evidence_report_from_context(
+            _context,
+            title=(
+                title
+                or "File Review Report"
+            ),
+        )
 
     if content is None:
         raise ValueError(
             "document_writer requires content."
         )
 
-    content = str(content)
+    content = str(
+        content
+    )
 
     content_size = len(
         content.encode(
@@ -1331,7 +1838,7 @@ def document_writer_handler(
     if extension not in ALLOWED_DOCUMENT_WRITE_EXTENSIONS:
         raise ValueError(
             "Unsupported document type: "
-            f"{extension or '[no extension]'}."
+            f"{extension or '[no extension]'}. "
         )
 
     normalized_output = str(
@@ -1378,6 +1885,47 @@ def document_writer_handler(
         content
     )
 
+    # Avoid a duplicated title if a caller still supplies one
+    # inside Markdown content.
+    if clean_title:
+
+        first_non_empty = next(
+            (
+                line.strip()
+                for line in cleaned_content.splitlines()
+                if line.strip()
+            ),
+            "",
+        )
+
+        first_heading = _clean_heading_text(
+            first_non_empty
+        )
+
+        if (
+            first_non_empty.startswith(
+                "#"
+            )
+            and first_heading.lower()
+            == clean_title.lower()
+        ):
+            content_lines = (
+                cleaned_content.splitlines()
+            )
+
+            if content_lines:
+                content_lines = content_lines[1:]
+
+                while (
+                    content_lines
+                    and not content_lines[0].strip()
+                ):
+                    content_lines = content_lines[1:]
+
+                cleaned_content = "\n".join(
+                    content_lines
+                ).strip()
+
     if clean_title:
         _add_document_title(
             document,
@@ -1405,6 +1953,17 @@ def document_writer_handler(
             "Generated DOCX document is empty."
         )
 
+    verified, verification_message = verify_artifact(
+        path,
+        "docx",
+    )
+
+    if not verified:
+        raise RuntimeError(
+            "DOCX creation failed verification: "
+            f"{verification_message}"
+        )
+
     return {
         "file_path": str(
             path.relative_to(
@@ -1419,8 +1978,14 @@ def document_writer_handler(
         "size_bytes": file_size,
         "created": True,
         "title": clean_title,
+        "verification": verification_message,
         "workspace": "NOVA",
         "tool": "document_writer",
+        "report_type": (
+            "evidence_review_report"
+            if content == "__EVIDENCE_REVIEW_REPORT__"
+            else "document"
+        ),
     }
 
 
@@ -1521,6 +2086,7 @@ def file_reader_handler(
             1 if content else 0
         ),
         "workspace": "NOVA",
+        "tool": "file_reader",
     }
 
 
@@ -1591,6 +2157,7 @@ def file_writer_handler(
         "size_bytes": path.stat().st_size,
         "created": True,
         "workspace": "NOVA",
+        "tool": "file_writer",
     }
 
 
@@ -1955,6 +2522,7 @@ def spreadsheet_reader_handler(
             "file_name": path.name,
             "file_type": "csv",
             "workspace": "NOVA",
+            "tool": "spreadsheet_reader",
             **spreadsheet,
         }
 
@@ -1971,6 +2539,7 @@ def spreadsheet_reader_handler(
         "file_name": path.name,
         "file_type": "xlsx",
         "workspace": "NOVA",
+        "tool": "spreadsheet_reader",
         **workbook_data,
     }
 
@@ -2174,9 +2743,24 @@ def pdf_writer_handler(
             "pdf_writer requires a file_path."
         )
 
-    _context = kwargs.get("_context")
-    if (content == "__EVIDENCE_REVIEW_REPORT__" or not str(content or "").strip()) and isinstance(_context, dict):
-        content = _synthesize_evidence_report_from_context(_context, title=title or "File Review Report")
+    _context = kwargs.get(
+        "_context"
+    )
+
+    if (
+        content == "__EVIDENCE_REVIEW_REPORT__"
+        or not str(content or "").strip()
+    ) and isinstance(
+        _context,
+        dict,
+    ):
+        content = _synthesize_evidence_report_from_context(
+            _context,
+            title=(
+                title
+                or "File Review Report"
+            ),
+        )
 
     path = _resolve_workspace_file(
         file_path
@@ -4837,7 +5421,6 @@ NOVA_IMAGE_LOCAL_FILES_ONLY = (
     }
 )
 
-# One-step SD-Turbo configuration.
 NOVA_IMAGE_STEPS = int(
     os.getenv(
         "NOVA_IMAGE_STEPS",
@@ -4845,7 +5428,6 @@ NOVA_IMAGE_STEPS = int(
     )
 )
 
-# SD-Turbo is guidance-distilled.
 NOVA_IMAGE_GUIDANCE = float(
     os.getenv(
         "NOVA_IMAGE_GUIDANCE",
@@ -4853,9 +5435,6 @@ NOVA_IMAGE_GUIDANCE = float(
     )
 )
 
-# IMPORTANT:
-# Diffusion happens at 256x256 for the 4 GB RTX 2050.
-# The resulting image is upscaled to 512x512 afterwards.
 NOVA_IMAGE_SIZE = int(
     os.getenv(
         "NOVA_IMAGE_SIZE",
@@ -4863,7 +5442,6 @@ NOVA_IMAGE_SIZE = int(
     )
 )
 
-# Final image size used by PowerPoint.
 NOVA_IMAGE_OUTPUT_SIZE = int(
     os.getenv(
         "NOVA_IMAGE_OUTPUT_SIZE",
@@ -5363,7 +5941,6 @@ def _load_nova_image_pipeline():
         except Exception:
             pass
 
-        # SD-Turbo does not need VAE slicing in this one-step path.
         try:
             if hasattr(
                 pipe,
@@ -5385,16 +5962,6 @@ def _pptx_generate_real_image_asset(
 ) -> str:
     """
     Generate one topic-aware real image locally.
-
-    Fast 4 GB GPU path:
-    - SD-Turbo
-    - one inference step
-    - 256x256 diffusion
-    - cached pipeline
-    - cached individual images
-    - 512x512 final output
-    - no negative prompt
-    - torch.inference_mode()
     """
 
     visual_profile = _pptx_visual_profile(
@@ -5429,7 +5996,6 @@ def _pptx_generate_real_image_asset(
         )
     ]
 
-    # Version tag prevents old 512x512 cached assets from being reused.
     signature = (
         "NOVA_FAST_SD_TURBO_V2|"
         f"{title}|"
@@ -5587,8 +6153,6 @@ def _pptx_generate_real_image_asset(
 
         except Exception:
 
-            # Final compatibility fallback for unusual CPU-only
-            # pipelines that do not cooperate with inference_mode.
             result = pipe(
                 **generation_kwargs
             )
@@ -5607,7 +6171,6 @@ def _pptx_generate_real_image_asset(
                 "RGB"
             )
 
-        # Upscale only after diffusion.
         if image.size != (
             final_size,
             final_size,
@@ -7035,14 +7598,6 @@ def _pptx_generate_fallback_visual_asset(
     bullets: List[str],
     slide_index: int,
 ) -> str:
-    """
-    Deterministic local fallback.
-
-    This path is extremely fast and remains useful when:
-    - image generation is disabled
-    - CUDA is unavailable
-    - diffusion model loading fails
-    """
 
     clean_title = _pptx_clean_text(
         title
@@ -7231,14 +7786,6 @@ def _pptx_generate_visual_asset(
     bullets: List[str],
     slide_index: int,
 ) -> str:
-    """
-    Generate one topic-aware visual.
-
-    Priority:
-    1. cached real local image
-    2. fast SD-Turbo image
-    3. deterministic vector fallback
-    """
 
     clean_bullets = [
         _pptx_clean_text(
@@ -8157,13 +8704,6 @@ def pptx_writer_handler(
 ) -> Dict[str, Any]:
     """
     Generate a professional PowerPoint presentation.
-
-    Fast visual architecture:
-    - one title slide with NOVA orb
-    - each content slide gets a topic-aware visual
-    - real local SD-Turbo image generation by default
-    - deterministic local fallback if generation fails
-    - visual assets kept outside workspace/output
     """
 
     if not file_path or not str(file_path).strip():
@@ -8345,10 +8885,6 @@ def pptx_writer_handler(
             }
         ]
 
-    # ------------------------------------------------------------------
-    # TITLE SLIDE
-    # ------------------------------------------------------------------
-
     slide_counter = 1
 
     _pptx_add_title_slide(
@@ -8359,10 +8895,6 @@ def pptx_writer_handler(
     )
 
     slide_counter += 1
-
-    # ------------------------------------------------------------------
-    # CONTENT SLIDES
-    # ------------------------------------------------------------------
 
     visual_timings = []
 
@@ -8386,7 +8918,6 @@ def pptx_writer_handler(
 
         image_path = None
 
-        # User supplied image gets priority.
         if supplied_image_path:
 
             try:
@@ -8408,7 +8939,6 @@ def pptx_writer_handler(
             except Exception:
                 image_path = None
 
-        # Otherwise generate a topic-specific image.
         if image_path is None:
 
             started = datetime.now()
@@ -8474,10 +9004,6 @@ def pptx_writer_handler(
 
         slide_counter += 1
 
-    # ------------------------------------------------------------------
-    # METADATA
-    # ------------------------------------------------------------------
-
     try:
 
         prs.core_properties.title = (
@@ -8505,10 +9031,6 @@ def pptx_writer_handler(
 
     except Exception:
         pass
-
-    # ------------------------------------------------------------------
-    # SAVE
-    # ------------------------------------------------------------------
 
     prs.save(
         str(path)

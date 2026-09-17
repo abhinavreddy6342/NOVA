@@ -67,6 +67,7 @@ Available NOVA tools are:
 - csv_writer
 - pptx_writer
 - visualization_writer
+- ocr
 
 IMPORTANT TOOL INPUT RULES:
 
@@ -97,6 +98,12 @@ IMPORTANT TOOL INPUT RULES:
   "inputs": {
       "file_path": "local workspace output path",
       "content": "generated content"
+  }
+
+- code_executor:
+  "inputs": {
+      "language": "python",
+      "code": "valid Python source code"
   }
 
 - spreadsheet_reader:
@@ -153,10 +160,9 @@ IMPORTANT TOOL INPUT RULES:
       "chart_type": "bar"
   }
 
-- code_executor:
+- ocr:
   "inputs": {
-      "language": "python",
-      "code": "valid Python source code"
+      "file_path": "local workspace image path"
   }
 
 Rules:
@@ -176,10 +182,12 @@ Rules:
 - Never guess what a file contains from its filename or extension.
 - Never say that a file "may contain" something when the actual file can be read.
 - For multiple supplied files, create one read/analyze step per real file.
-- After reading supplied files, allow the final response layer to synthesize
-  the actual results into a file-by-file answer.
-- Do not create a report artifact unless the user explicitly requests a
-  document, PDF, DOCX, Excel workbook, CSV, PowerPoint, or other output file.
+- Preserve all real source evidence.
+- Do not modify source files.
+- When Mission Control explicitly requires a generated deliverable,
+  create the required writer step after the source-reading steps.
+- Writer dependencies must include every source-reading step needed
+  to produce the deliverable.
 - Return only valid JSON.
 """
 
@@ -315,8 +323,8 @@ class AgentPlanner:
     the actual artifact.
 
     Evidence-review requests are handled deterministically so that
-    actual supplied source files are read before NOVA produces its
-    final answer.
+    actual supplied source files are read before NOVA produces
+    the final response or mandatory Mission Control report.
     """
 
     # ------------------------------------------------------------------
@@ -356,6 +364,7 @@ Important:
 - Creating PowerPoint -> pptx_writer
 - Creating charts -> visualization_writer
 - Executing Python -> code_executor
+- OCR on local images -> ocr
 
 For file-review requests:
 
@@ -363,9 +372,26 @@ For file-review requests:
 - Read every supplied source file first.
 - Use document_reader for PDF/DOCX.
 - Use spreadsheet_reader for CSV/XLSX.
-- Use file_reader for TXT/MD/JSON and other supported text files.
-- Do not create a report artifact unless explicitly requested.
+- Use file_reader for TXT/MD/JSON and supported text files.
+- Use ocr for PNG/JPG/JPEG when OCR is required.
+- Never invent a source file.
+- Never skip a supplied file.
 - Let the final response synthesize the actual tool results.
+
+For Mission Control evidence-review requests:
+
+- Read every supplied evidence file.
+- Then create the required report artifact.
+- The report must use only actual completed reader results.
+- The report writer must depend on every reader step.
+- A Mission Control mandatory DOCX report must use:
+  document_writer
+- Use:
+  output/file_review_report.docx
+- Use:
+  "__EVIDENCE_REVIEW_REPORT__"
+  as the document_writer content marker when the report
+  must be synthesized by NOVA's existing evidence-report handler.
 
 IMPORTANT PATH RULE:
 
@@ -452,7 +478,7 @@ For csv_writer:
 
 "inputs": {{
     "file_path": "<workspace/output CSV path>",
-    "content": "<generated CSV content>"
+    "content": "<CSV content>"
 }}
 
 For pptx_writer:
@@ -481,6 +507,12 @@ For visualization_writer:
     "file_path": "<workspace/output image path>",
     "title": "<chart title>",
     "chart_type": "bar"
+}}
+
+For ocr:
+
+"inputs": {{
+    "file_path": "<local NOVA workspace image path>"
 }}
 
 For code_executor:
@@ -664,38 +696,14 @@ Rules:
         objective: str,
     ) -> Optional[str]:
 
-        text = objective.strip()
-
-        pattern = (
-            r"(?<![A-Za-z0-9_./\\-])"
-            r"((?:output|input|temp)"
-            r"[\\/]"
-            r"[A-Za-z0-9_.\-\\/]+"
-            r"\.[A-Za-z0-9]+)"
-            r"(?![A-Za-z0-9_.\-])"
+        paths = self._extract_all_workspace_paths(
+            objective
         )
 
-        match = re.search(
-            pattern,
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        if not match:
+        if not paths:
             return None
 
-        candidate = match.group(
-            1
-        ).strip()
-
-        candidate = candidate.rstrip(
-            ".,;:)"
-        )
-
-        return candidate.replace(
-            "\\",
-            "/",
-        )
+        return paths[0]
 
     def _extract_all_workspace_paths(
         self,
@@ -704,8 +712,8 @@ Rules:
         """
         Extract every real workspace file path from the objective.
 
-        Supports filenames containing spaces, parentheses and other
-        normal filename characters.
+        Supports names containing spaces, parentheses and ordinary
+        filename punctuation.
         """
 
         text = str(
@@ -721,6 +729,7 @@ Rules:
         def add_path(
             value: str,
         ) -> None:
+
             candidate = str(
                 value or ""
             ).strip()
@@ -749,7 +758,9 @@ Rules:
                 "workspace/"
             ):
                 candidate = candidate[
-                    len("workspace/"):
+                    len(
+                        "workspace/"
+                    ):
                 ]
 
             if not candidate:
@@ -795,30 +806,34 @@ Rules:
                 candidate
             )
 
-        # Parse explicit SOURCE FILES lines first.
-        source_line_pattern = re.compile(
-            r"^\s*[-•]\s*"
+        # ------------------------------------------------------------------
+        # Explicit SOURCE FILES block
+        # ------------------------------------------------------------------
+
+        source_block_pattern = re.compile(
+            r"(?im)^\s*[-•]\s*"
             r"((?:workspace[\\/])?"
             r"input[\\/]"
-            r"[^\r\n]+?\."
+            r".+?\."
             r"(?:csv|xlsx|pdf|docx|txt|md|json|png|jpg|jpeg))"
-            r"\s*$",
-            flags=re.IGNORECASE
-            | re.MULTILINE,
+            r"\s*$"
         )
 
-        for match in source_line_pattern.finditer(
+        for match in source_block_pattern.finditer(
             text
         ):
             add_path(
                 match.group(1)
             )
 
-        # Parse workspace paths appearing elsewhere.
+        # ------------------------------------------------------------------
+        # General workspace paths
+        # ------------------------------------------------------------------
+
         broad_pattern = re.compile(
             r"(?i)(?:workspace[\\/])?"
             r"(?:input|output|temp)[\\/]"
-            r"[A-Za-z0-9_.()\- ]+?\."
+            r"[^,\r\n;<>]+?\."
             r"(?:csv|xlsx|pdf|docx|txt|md|json|png|jpg|jpeg)"
             r"(?=$|[\s,;:)>\]}*`'\".])"
         )
@@ -844,7 +859,7 @@ Rules:
             r"(?:workspace[\\/])?"
             r"(output"
             r"[\\/]"
-            r"[A-Za-z0-9_.\-\\/]+"
+            r"[A-Za-z0-9_.()\- /\\]+"
             r"\.[A-Za-z0-9]+)"
             r"(?![A-Za-z0-9_.\-])"
         )
@@ -887,7 +902,7 @@ Rules:
     ) -> str:
         """
         Convert accepted workspace-relative output paths to the
-        canonical format consumed by writer tools.
+        canonical output/<filename> form consumed by writer tools.
         """
 
         if not file_path:
@@ -896,9 +911,14 @@ Rules:
             )
 
         normalized = (
-            str(file_path)
+            str(
+                file_path
+            )
             .strip()
-            .replace("\\", "/")
+            .replace(
+                "\\",
+                "/",
+            )
         )
 
         normalized = normalized.lstrip(
@@ -911,14 +931,20 @@ Rules:
             "workspace/output/"
         ):
             normalized = normalized[
-                len("workspace/")
+                len(
+                    "workspace/"
+                ):
             ]
 
         lower = normalized.lower()
 
         if (
-            lower.startswith("workspace/input/")
-            or lower.startswith("input/")
+            lower.startswith(
+                "workspace/input/"
+            )
+            or lower.startswith(
+                "input/"
+            )
             or "/input/" in lower
         ):
             raise ValueError(
@@ -935,7 +961,9 @@ Rules:
             )
 
         output_relative = normalized[
-            len("output/"):
+            len(
+                "output/"
+            ):
         ]
 
         if not output_relative:
@@ -1377,7 +1405,9 @@ Important requirements:
                     raw_bullets
                 ]
 
-            bullets: List[str] = []
+            bullets: List[
+                str
+            ] = []
 
             for bullet in raw_bullets:
 
@@ -1415,7 +1445,6 @@ Important requirements:
                 elif not image_path.lower().startswith(
                     "output/"
                 ):
-
                     image_path = None
 
             slides.append(
@@ -1427,19 +1456,16 @@ Important requirements:
             )
 
         if not title:
-
             title = self._derive_presentation_title(
                 objective
             )
 
         if not subtitle:
-
             subtitle = (
                 "Sovereign Industrial Intelligence"
             )
 
         if not slides:
-
             slides = [
                 {
                     "title": "Overview",
@@ -1771,6 +1797,45 @@ Important requirements:
             for term in file_terms
         )
 
+    # ------------------------------------------------------------------
+    # MISSION CONTROL DETECTION
+    # ------------------------------------------------------------------
+
+    def _is_mission_control_evidence_review_intent(
+        self,
+        objective: str,
+    ) -> bool:
+        """
+        Detect the explicit Mission Control evidence-review workflow.
+
+        routes.py injects a mandatory Mission Control deliverable marker.
+        This marker intentionally overrides contradictory conversational
+        wording such as "do not create any files" because Mission Control
+        is responsible for producing its verified review artifact.
+        """
+
+        text = " ".join(
+            str(
+                objective or ""
+            ).lower().split()
+        )
+
+        mission_markers = (
+            "mandatory mission control evidence review deliverable",
+            "mandatory evidence review deliverable",
+            "mission control evidence review",
+            "mission control deliverable",
+            "return the generated docx as a real workspace artifact",
+            "return the created docx as a real verified artifact",
+            "output/file_review_report.docx",
+            "__evidence_review_report__",
+        )
+
+        return any(
+            marker in text
+            for marker in mission_markers
+        )
+
     def _is_evidence_review_intent(
         self,
         objective: str,
@@ -1786,39 +1851,123 @@ Important requirements:
             ).lower().split()
         )
 
+        if self._is_mission_control_evidence_review_intent(
+            objective
+        ):
+            return True
+
         review_terms = (
-            "check the files", "check every file", "check all files", "check every attached file",
-            "check all attached files", "check these files", "check the attached files",
-            "check the provided files", "check uploaded files", "check each file", "check the file",
-            "read every file", "read all files", "read every attached file", "read all attached files",
-            "read these files", "read uploaded files", "read each file", "read the file", "read the files",
-            "review the files", "review every file", "review all files", "review every attached file",
-            "review all attached files", "review the attached files", "review the provided files",
-            "review uploaded files", "review each file", "review the evidence", "review all the evidence", "review the file",
-            "inspect every file", "inspect all files", "inspect every attached file",
-            "inspect all attached files", "inspect the attached files", "inspect each file", "inspect the file", "inspect the files",
-            "analyze every file", "analyse every file", "analyze all files", "analyse all files",
-            "analyze every attached file", "analyse every attached file", "analyze all attached files",
-            "analyse all attached files", "analyze the attached files", "analyse the attached files",
-            "analyze the provided files", "analyse the provided files", "analyze each file", "analyse each file",
-            "analyze the file", "analyse the file", "analyze the files", "analyse the files",
-            "tell me what each file", "tell me what every file", "tell me what each uploaded file",
-            "tell me what each attached file", "tell me what each file contains",
-            "tell me what every file contains", "tell me what each file is about",
-            "tell me what every file is about", "tell me what these files contain",
-            "tell me what these files are about", "tell me what each uploaded file contains",
-            "tell me what each uploaded file is about", "tell me what each attached file contains",
-            "tell me what this file contains", "tell me what this spreadsheet contains", "tell me what this document contains",
-            "what each file contains", "what every file contains", "what each file is about",
-            "what every file is about", "what does each file contain", "what does every file contain",
-            "what are these files about", "what do these files contain", "what each uploaded file contains",
-            "what this file contains", "what this spreadsheet contains",
-            "explain each file", "explain every file", "explain these files", "explain all files", "explain the file", "explain the files",
-            "summarize each file", "summarise each file", "summarize every file", "summarise every file",
-            "summarize these files", "summarise these files", "summarize all files", "summarise all files", "summarize the file", "summarise the file",
-            "summarize each one", "summarise each one", "explain each one", "explain the contents", "explain what each file contains",
-            "understand the files", "understand every file", "understand these files",
-            "look through the files", "go through the files",
+            "check the files",
+            "check every file",
+            "check all files",
+            "check every attached file",
+            "check all attached files",
+            "check these files",
+            "check the attached files",
+            "check the provided files",
+            "check uploaded files",
+            "check each file",
+            "check the file",
+            "read every file",
+            "read all files",
+            "read every attached file",
+            "read all attached files",
+            "read these files",
+            "read uploaded files",
+            "read each file",
+            "read the file",
+            "read the files",
+            "review the files",
+            "review every file",
+            "review all files",
+            "review every attached file",
+            "review all attached files",
+            "review the attached files",
+            "review the provided files",
+            "review uploaded files",
+            "review each file",
+            "review the evidence",
+            "review all the evidence",
+            "review the file",
+            "inspect every file",
+            "inspect all files",
+            "inspect every attached file",
+            "inspect all attached files",
+            "inspect the attached files",
+            "inspect each file",
+            "inspect the file",
+            "inspect the files",
+            "analyze every file",
+            "analyse every file",
+            "analyze all files",
+            "analyse all files",
+            "analyze every attached file",
+            "analyse every attached file",
+            "analyze all attached files",
+            "analyse all attached files",
+            "analyze the attached files",
+            "analyse the attached files",
+            "analyze the provided files",
+            "analyse the provided files",
+            "analyze each file",
+            "analyse each file",
+            "analyze the file",
+            "analyse the file",
+            "analyze the files",
+            "analyse the files",
+            "tell me what each file",
+            "tell me what every file",
+            "tell me what each uploaded file",
+            "tell me what each attached file",
+            "tell me what each file contains",
+            "tell me what every file contains",
+            "tell me what each file is about",
+            "tell me what every file is about",
+            "tell me what these files contain",
+            "tell me what these files are about",
+            "tell me what each uploaded file contains",
+            "tell me what each uploaded file is about",
+            "tell me what each attached file contains",
+            "tell me what this file contains",
+            "tell me what this spreadsheet contains",
+            "tell me what this document contains",
+            "what each file contains",
+            "what every file contains",
+            "what each file is about",
+            "what every file is about",
+            "what does each file contain",
+            "what does every file contain",
+            "what are these files about",
+            "what do these files contain",
+            "what each uploaded file contains",
+            "what this file contains",
+            "what this spreadsheet contains",
+            "explain each file",
+            "explain every file",
+            "explain these files",
+            "explain all files",
+            "explain the file",
+            "explain the files",
+            "summarize each file",
+            "summarise each file",
+            "summarize every file",
+            "summarise every file",
+            "summarize these files",
+            "summarise these files",
+            "summarize all files",
+            "summarise all files",
+            "summarize the file",
+            "summarise the file",
+            "summarize each one",
+            "summarise each one",
+            "explain each one",
+            "explain the contents",
+            "explain what each file contains",
+            "understand the files",
+            "understand every file",
+            "understand these files",
+            "look through the files",
+            "go through the files",
         )
 
         has_review_language = any(
@@ -1835,36 +1984,107 @@ Important requirements:
         source_file_marker = (
             "source files:"
             in text
-            or "real user-provided evidence is available" in text
-            or "evidence review mode is active" in text
+            or
+            "real user-provided evidence is available"
+            in text
+            or
+            "evidence review mode is active"
+            in text
         )
 
         attachment_language = any(
             phrase in text
             for phrase in (
-                "attached file", "attached files", "provided file", "provided files",
-                "supplied file", "supplied files", "evidence file", "evidence files",
-                "uploaded file", "uploaded files", "these files", "this file",
-                "each file", "every file", "all files", "the files",
+                "attached file",
+                "attached files",
+                "provided file",
+                "provided files",
+                "supplied file",
+                "supplied files",
+                "evidence file",
+                "evidence files",
+                "uploaded file",
+                "uploaded files",
+                "these files",
+                "this file",
+                "each file",
+                "every file",
+                "all files",
+                "the files",
             )
         )
 
         if has_review_language and (
-            len(workspace_paths) >= 1
+            len(
+                workspace_paths
+            ) >= 1
             or source_file_marker
             or attachment_language
         ):
             return True
 
-        # Secondary check for action word + file keyword
-        action_words = ("check", "review", "read", "analyze", "analyse", "inspect", "explain", "summarize", "summarise", "understand", "tell")
-        file_words = ("file", "files", "attachment", "attachments", "upload", "uploads", "evidence", "spreadsheet", "document")
-        has_action = any(act in text for act in action_words)
-        has_file_kw = any(fw in text for fw in file_words)
-        has_scope = any(sc in text for sc in ("each", "every", "all", "these", "this", "attached", "uploaded", "provided", "supplied"))
+        action_words = (
+            "check",
+            "review",
+            "read",
+            "analyze",
+            "analyse",
+            "inspect",
+            "explain",
+            "summarize",
+            "summarise",
+            "understand",
+            "tell",
+        )
+
+        file_words = (
+            "file",
+            "files",
+            "attachment",
+            "attachments",
+            "upload",
+            "uploads",
+            "evidence",
+            "spreadsheet",
+            "document",
+        )
+
+        has_action = any(
+            act in text
+            for act in action_words
+        )
+
+        has_file_kw = any(
+            fw in text
+            for fw in file_words
+        )
+
+        has_scope = any(
+            sc in text
+            for sc in (
+                "each",
+                "every",
+                "all",
+                "these",
+                "this",
+                "attached",
+                "uploaded",
+                "provided",
+                "supplied",
+            )
+        )
 
         return bool(
-            has_action and has_file_kw and has_scope and (len(workspace_paths) >= 1 or source_file_marker or attachment_language)
+            has_action
+            and has_file_kw
+            and has_scope
+            and (
+                len(
+                    workspace_paths
+                ) >= 1
+                or source_file_marker
+                or attachment_language
+            )
         )
 
     def _is_evidence_review_with_report_intent(
@@ -1872,26 +2092,63 @@ Important requirements:
         objective: str,
     ) -> bool:
         """
-        Detect if user wants both evidence review AND a generated report artifact.
+        Detect evidence review workflows that require a generated report.
+
+        Mission Control's mandatory report marker takes precedence over
+        contradictory natural-language phrases such as "do not create
+        any files".
         """
-        if not self._is_evidence_review_intent(objective):
+
+        if self._is_mission_control_evidence_review_intent(
+            objective
+        ):
+            return True
+
+        if not self._is_evidence_review_intent(
+            objective
+        ):
             return False
 
-        text = str(objective or "").lower()
-
-        # Check for explicit "do not create any files"
-        if "do not create any files" in text or "don't create any files" in text or "no files" in text:
-            return False
+        text = str(
+            objective or ""
+        ).lower()
 
         report_terms = (
-            "create a pdf", "generate a pdf", "make a pdf", "write a pdf", "pdf report",
-            "create a docx", "generate a docx", "make a docx", "write a docx", "word document", "word report",
-            "create a report", "generate a report", "make a report", "write a report", "report file",
-            "create a document", "generate a document", "make a document", "write a document",
-            "create an excel", "generate an excel", "excel report", "create a powerpoint", "pptx"
+            "create a pdf",
+            "generate a pdf",
+            "make a pdf",
+            "write a pdf",
+            "pdf report",
+            "create a docx",
+            "generate a docx",
+            "make a docx",
+            "write a docx",
+            "word document",
+            "word report",
+            "create a report",
+            "generate a report",
+            "make a report",
+            "write a report",
+            "report file",
+            "review report",
+            "review document",
+            "file review report",
+            "export the review",
+            "create a document",
+            "generate a document",
+            "make a document",
+            "write a document",
+            "create an excel",
+            "generate an excel",
+            "excel report",
+            "create a powerpoint",
+            "pptx",
         )
 
-        return any(term in text for term in report_terms)
+        return any(
+            term in text
+            for term in report_terms
+        )
 
     def _is_spreadsheet_analysis_intent(
         self,
@@ -2211,11 +2468,15 @@ Important requirements:
         if suffix in {
             ".pdf",
             ".docx",
+        }:
+            return "document_reader"
+
+        if suffix in {
             ".png",
             ".jpg",
             ".jpeg",
         }:
-            return "document_reader"
+            return "ocr"
 
         if suffix in {
             ".xlsx",
@@ -2280,12 +2541,11 @@ Important requirements:
 
             if tool_name == "document_reader":
 
-                if suffix in {".png", ".jpg", ".jpeg"}:
-                    type_label = "Image"
-                elif suffix == ".pdf":
-                    type_label = "PDF"
-                else:
-                    type_label = "DOCX"
+                type_label = (
+                    "PDF"
+                    if suffix == ".pdf"
+                    else "DOCX"
+                )
 
                 title = (
                     f"Read {type_label}: "
@@ -2303,6 +2563,25 @@ Important requirements:
                 expected_output = (
                     f"Actual readable contents of "
                     f"{filename}."
+                )
+
+            elif tool_name == "ocr":
+
+                title = (
+                    f"Inspect image evidence: "
+                    f"{filename}"
+                )
+
+                description = (
+                    f"Analyze the supplied image "
+                    f"'{filename}' using NOVA's local "
+                    "OCR capability and extract "
+                    "readable visible evidence."
+                )
+
+                expected_output = (
+                    f"Actual OCR-readable evidence "
+                    f"from {filename}."
                 )
 
             elif tool_name == "spreadsheet_reader":
@@ -2377,28 +2656,35 @@ Important requirements:
             )
 
         # ------------------------------------------------------------------
-        # PHASE 2 — GENERATED REPORT ARTIFACT (IF REQUESTED)
+        # MISSION CONTROL / REPORT PHASE
         # ------------------------------------------------------------------
 
-        if self._is_evidence_review_with_report_intent(objective):
-            reader_step_ids = [s["id"] for s in steps]
-            writer_tool = "pdf_writer"
-            writer_path = "output/file_review_report.pdf"
+        if self._is_evidence_review_with_report_intent(
+            objective
+        ):
+            reader_step_ids = [
+                step["id"]
+                for step in steps
+            ]
 
-            obj_lower = objective.lower()
-            if "word" in obj_lower or "docx" in obj_lower:
-                writer_tool = "document_writer"
-                writer_path = "output/file_review_report.docx"
+            # Mission Control's mandatory review artifact is DOCX.
+            writer_tool = "document_writer"
+            writer_path = (
+                "output/file_review_report.docx"
+            )
 
-            report_step_id = f"step-{len(steps) + 1}"
+            report_step_id = (
+                f"step-{len(steps) + 1}"
+            )
 
             steps.append(
                 {
                     "id": report_step_id,
                     "title": "Generate File Review Report",
                     "description": (
-                        "Synthesize completed source-reading results "
-                        "into a formal review report artifact."
+                        "Synthesize the actual completed "
+                        "source-reading results into a "
+                        "formal DOCX review report."
                     ),
                     "tool": writer_tool,
                     "dependencies": reader_step_ids,
@@ -2408,15 +2694,20 @@ Important requirements:
                         "content": "__EVIDENCE_REVIEW_REPORT__",
                     },
                     "expected_output": (
-                        "File review report generated inside the NOVA workspace output directory."
+                        "File review DOCX generated inside "
+                        "the NOVA workspace output directory."
                     ),
                 }
             )
 
             if writer_tool not in tools_required:
-                tools_required.append(writer_tool)
+                tools_required.append(
+                    writer_tool
+                )
 
-            expected_outputs.append("Generated file review report artifact")
+            expected_outputs.append(
+                "Generated verified file review DOCX"
+            )
 
         return {
             "objective": objective,
@@ -2443,8 +2734,10 @@ Important requirements:
 
         if file_path:
 
-            tool_name = self._file_reader_tool_for_path(
-                file_path
+            tool_name = (
+                self._file_reader_tool_for_path(
+                    file_path
+                )
             )
 
             if tool_name == "document_reader":
@@ -2467,6 +2760,17 @@ Important requirements:
 
                 expected_output = (
                     "Actual spreadsheet contents."
+                )
+
+            elif tool_name == "ocr":
+
+                description = (
+                    "Analyze the requested local image "
+                    "using NOVA's local OCR capability."
+                )
+
+                expected_output = (
+                    "Actual OCR-readable image evidence."
                 )
 
             else:
@@ -3501,6 +3805,7 @@ The Python program must:
             "file_reader",
             "spreadsheet_reader",
             "spreadsheet_analysis",
+            "ocr",
         }:
 
             file_path = normalized_inputs.get(
@@ -3513,10 +3818,17 @@ The Python program must:
                 ] = (
                     str(
                         file_path
-                    ).strip().replace(
+                    )
+                    .strip()
+                    .replace(
                         "\\",
                         "/",
                     )
+                )
+
+            else:
+                raise ValueError(
+                    f"Tool '{tool}' requires a file_path."
                 )
 
         elif tool in {
@@ -3849,9 +4161,7 @@ The Python program must:
         """
         Deterministic safety-net plan.
 
-        For normal non-file tasks it creates a local report.
-        Evidence-review requests are handled before this fallback
-        and therefore will never reach this generic writer path.
+        Evidence-review requests are handled before this fallback.
         """
 
         output_path = (
@@ -4170,7 +4480,26 @@ The Python program must:
             )
 
         # --------------------------------------------------------------
-        # EVIDENCE REVIEW MUST ALWAYS BE CHECKED FIRST
+        # MISSION CONTROL EVIDENCE REVIEW + REPORT
+        # --------------------------------------------------------------
+
+        if self._is_evidence_review_with_report_intent(
+            objective
+        ):
+
+            raw_plan = (
+                self._force_evidence_review_plan(
+                    objective
+                )
+            )
+
+            return self._normalize_plan(
+                objective,
+                raw_plan,
+            )
+
+        # --------------------------------------------------------------
+        # EVIDENCE REVIEW
         # --------------------------------------------------------------
 
         if self._is_evidence_review_intent(
@@ -4188,6 +4517,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # KNOWLEDGE
+        # --------------------------------------------------------------
+
         if self._is_knowledge_search_intent(
             objective
         ):
@@ -4202,6 +4535,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # CODE EXECUTION
+        # --------------------------------------------------------------
 
         if self._is_code_execution_intent(
             objective
@@ -4218,6 +4555,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # PDF
+        # --------------------------------------------------------------
+
         if self._is_pdf_write_intent(
             objective
         ):
@@ -4232,6 +4573,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # EXCEL
+        # --------------------------------------------------------------
 
         if self._is_xlsx_write_intent(
             objective
@@ -4248,6 +4593,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # CSV
+        # --------------------------------------------------------------
+
         if self._is_csv_write_intent(
             objective
         ):
@@ -4262,6 +4611,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # POWERPOINT
+        # --------------------------------------------------------------
 
         if self._is_pptx_write_intent(
             objective
@@ -4278,6 +4631,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # VISUALIZATION
+        # --------------------------------------------------------------
+
         if self._is_visualization_intent(
             objective
         ):
@@ -4292,6 +4649,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # DOCUMENT
+        # --------------------------------------------------------------
 
         if self._is_document_write_intent(
             objective
@@ -4308,6 +4669,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # FILE WRITE
+        # --------------------------------------------------------------
+
         if self._is_file_write_intent(
             objective
         ):
@@ -4322,6 +4687,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # SPREADSHEET ANALYSIS
+        # --------------------------------------------------------------
 
         if self._is_spreadsheet_analysis_intent(
             objective
@@ -4338,6 +4707,10 @@ The Python program must:
                 raw_plan,
             )
 
+        # --------------------------------------------------------------
+        # SPREADSHEET READING
+        # --------------------------------------------------------------
+
         if self._is_spreadsheet_intent(
             objective
         ):
@@ -4352,6 +4725,10 @@ The Python program must:
                 objective,
                 raw_plan,
             )
+
+        # --------------------------------------------------------------
+        # FILE READING
+        # --------------------------------------------------------------
 
         if self._is_file_read_intent(
             objective

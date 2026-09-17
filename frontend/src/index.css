@@ -288,7 +288,8 @@ h3,
     nova-glow-drift-one
     12s
     ease-in-out
-    infinite alternate;
+    infinite
+    alternate;
 }
 
 .glow-two {
@@ -301,7 +302,8 @@ h3,
     nova-glow-drift-two
     15s
     ease-in-out
-    infinite alternate;
+    infinite
+    alternate;
 }
 
 @keyframes nova-glow-drift-one {
@@ -2623,7 +2625,6 @@ h3,
   text-transform: uppercase;
 }
 
-/* Main NOVA hero accent */
 .hero-accent-text {
   color: var(--nova-accent-soft);
   text-shadow:
@@ -2631,7 +2632,6 @@ h3,
     0 0 42px rgba(109, 220, 255, 0.045);
 }
 
-/* Hero subtitle receives stronger hierarchy */
 .hero-subtitle {
   display: block;
 
@@ -2651,7 +2651,6 @@ h3,
   color: inherit;
 }
 
-/* Technical system label beneath hero */
 .hero-copy > p {
   position: relative;
 
@@ -2980,6 +2979,7 @@ h3,
     height: 11px;
   }
 }
+
 .ai-state {
   display: inline-flex;
   align-items: center;
@@ -3025,6 +3025,7 @@ h3,
     transform: scale(1.15);
   }
 }
+
 /* =========================================
    KNOWLEDGE VAULT
    ========================================= */
@@ -3379,10 +3380,8 @@ h3,
   }
 }
 
-
 /* =========================================================
    NOVA LOCAL CHAT — PREMIUM COMMAND CENTER UI
-   High-contrast graphite / white / cyan interaction system
    ========================================================= */
 
 .nova-chat-page {
@@ -3392,10 +3391,6 @@ h3,
   margin: 0 auto;
   padding: 28px 34px 38px;
 }
-
-/* =========================================================
-   HERO
-   ========================================================= */
 
 .nova-chat-hero {
   display: flex;
@@ -4332,10 +4327,6 @@ h3,
     );
 }
 
-/* =========================================================
-   ANIMATIONS
-   ========================================================= */
-
 @keyframes nova-chat-live-pulse {
   0%,
   100% {
@@ -4387,10 +4378,6 @@ h3,
     transform: scaleY(1);
   }
 }
-
-/* =========================================================
-   RESPONSIVE
-   ========================================================= */
 
 @media (max-width: 1050px) {
   .nova-chat-hero-side {
@@ -4497,6 +4484,7 @@ h3,
     font-size: 12.5px;
   }
 }
+
 /* =========================================================
    NOVA LOCAL CHAT — FINAL MESSAGE / ATTACHMENT SYSTEM
    ========================================================= */
@@ -4508,7 +4496,6 @@ h3,
   gap: 18px;
 }
 
-/* Message card = content driven */
 .nova-chat-message {
   width: fit-content;
   max-width: min(820px, 76%);
@@ -4605,7 +4592,6 @@ h3,
   line-height: 1.65;
 }
 
-/* Attachment shown inside sent message */
 .nova-chat-message-files {
   display: flex;
   flex-wrap: wrap;
@@ -4631,7 +4617,6 @@ h3,
   white-space: nowrap;
 }
 
-/* Thinking */
 .nova-chat-thinking {
   align-self: flex-start;
   display: flex;
@@ -4670,7 +4655,6 @@ h3,
   }
 }
 
-/* Composer */
 .nova-chat-composer {
   position: relative;
 }
@@ -4750,7 +4734,6 @@ h3,
     0 0 28px rgba(109, 220, 255, 0.07);
 }
 
-/* Selected attachments */
 .nova-chat-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -4823,7 +4806,6 @@ h3,
   color: #ffffff;
 }
 
-/* Upload state */
 .nova-chat-attachments:has(.nova-chat-attachment) {
   animation: novaAttachmentIn 180ms ease-out;
 }
@@ -4850,7 +4832,6 @@ h3,
   }
 }
 
-/* Mobile */
 @media (max-width: 900px) {
   .nova-chat-message {
     max-width: 88%;
@@ -4891,26 +4872,20 @@ h3,
   flex-shrink: 0;
 }
 
-/* Recent chat list */
 .recent-chat-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-
   width: 100%;
   flex: 1;
   min-height: 0;
   flex-shrink: 1;
-
   max-height: none;
-
   overflow-x: hidden;
   overflow-y: auto;
-
   padding-right: 2px;
 }
 
-/* Scrollbar */
 .recent-chat-list::-webkit-scrollbar {
   width: 3px;
 }
@@ -4923,33 +4898,23 @@ h3,
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Empty state */
 .recent-empty {
   padding: 10px 9px;
-
   color: rgba(255, 255, 255, 0.24);
-
   font-size: 7px;
   line-height: 1.5;
-
   letter-spacing: 0.14em;
 }
 
-/* Individual chat */
 .recent-chat-row {
   position: relative;
-
   display: flex;
   align-items: stretch;
-
   width: 100%;
   min-width: 0;
-
   border: 1px solid transparent;
   border-radius: 7px;
-
   background: transparent;
-
   transition:
     background 160ms ease,
     border-color 160ms ease;
@@ -4960,7 +4925,6 @@ h3,
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* Active conversation */
 .recent-chat-row.active {
   background:
     linear-gradient(
@@ -4972,94 +4936,60 @@ h3,
   border-color: rgba(255, 255, 255, 0.10);
 }
 
-/* Chat button */
 .recent-chat-open {
   flex: 1;
   min-width: 0;
-
   display: flex;
   flex-direction: column;
-
   gap: 4px;
-
   padding: 9px 7px 9px 10px;
-
   text-align: left;
-
   color: inherit;
   background: transparent;
-
   cursor: pointer;
 }
 
-/* Title */
 .recent-chat-title {
   display: block;
-
   width: 100%;
-
   overflow: hidden;
-
   color: rgba(245, 248, 250, 0.90);
-
   font-size: 9px;
   font-weight: 600;
-
   line-height: 1.35;
-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Preview */
 .recent-chat-preview {
   display: block;
-
   width: 100%;
-
   overflow: hidden;
-
   color: rgba(255, 255, 255, 0.36);
-
   font-size: 7px;
-
   line-height: 1.4;
-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Time */
 .recent-chat-time {
   display: block;
-
   color: rgba(255, 255, 255, 0.20);
-
   font-family: var(--font-mono);
-
   font-size: 6px;
-
   line-height: 1.2;
 }
 
-/* Delete */
 .recent-chat-delete {
   width: 28px;
   min-width: 28px;
-
   display: grid;
   place-items: center;
-
   padding: 0;
-
   border: 0;
-
   color: rgba(255, 255, 255, 0.20);
-
   background: transparent;
-
   cursor: pointer;
-
   transition:
     color 160ms ease,
     background 160ms ease;
@@ -5067,16 +4997,13 @@ h3,
 
 .recent-chat-delete:hover {
   color: rgba(255, 150, 150, 0.95);
-
   background: rgba(255, 90, 90, 0.055);
 }
 
-/* Keep the normal bottom area untouched */
 .sidebar-bottom {
   margin-top: auto;
 }
 
-/* Sidebar scroll only when absolutely necessary */
 .nova-sidebar {
   overflow-y: auto;
   overflow-x: hidden;
@@ -5094,7 +5021,6 @@ h3,
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* Mobile */
 @media (max-width: 900px) {
   .recent-chat-section {
     margin-top: 18px;
@@ -5104,10 +5030,6 @@ h3,
     max-height: none;
   }
 }
-
-/* =========================================================
-   RESPONSIVE
-   ========================================================= */
 
 @media (max-width: 900px) {
   .recent-chat-section {
@@ -5119,10 +5041,8 @@ h3,
   }
 }
 
-
 /* =========================================================
    NOVA 3D INTELLIGENCE ENVIRONMENT — V1
-   Added without removing existing NOVA styles.
    ========================================================= */
 
 .nova-scene-3d {
@@ -5415,8 +5335,6 @@ h3,
 
 /* =========================================================
    NOVA CHAT — SCROLL CONSTRAINT FIX
-   Keeps the composer visible and makes messages independently
-   scrollable.
    ========================================================= */
 
 .nova-chat-page {
@@ -5450,10 +5368,6 @@ h3,
   flex: 0 0 auto;
 }
 
-/* =========================================================
-   MOBILE
-   ========================================================= */
-
 @media (max-width: 900px) {
   .nova-chat-page {
     min-height: calc(100vh - 62px);
@@ -5481,9 +5395,9 @@ h3,
     overflow-y: auto;
   }
 }
+
 /* =========================================================
    NOVA AGENT WORKFLOW PANEL
-   Enterprise AI Copilot & Mission Control Timeline
    ========================================================= */
 
 .nova-workflow-panel {
@@ -5520,7 +5434,6 @@ h3,
   opacity: 0.8;
 }
 
-/* Header */
 .nova-workflow-header {
   display: flex;
   align-items: center;
@@ -5596,7 +5509,6 @@ h3,
   color: #6ddcff;
 }
 
-/* Meta Section */
 .nova-workflow-meta {
   margin-top: 12px;
   margin-bottom: 14px;
@@ -5617,7 +5529,6 @@ h3,
   font-weight: 400;
 }
 
-/* Steps Section */
 .nova-workflow-steps {
   display: flex;
   flex-direction: column;
@@ -5634,7 +5545,9 @@ h3,
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.05);
   background: rgba(255, 255, 255, 0.018);
-  transition: border-color 150ms ease, background 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .nova-workflow-step:hover {
@@ -5729,7 +5642,6 @@ h3,
   border-color: rgba(245, 158, 11, 0.2);
 }
 
-/* Metrics Cards */
 .nova-workflow-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -5780,17 +5692,13 @@ h3,
 
 /* =========================================================
    NOVA GENERATED ARTIFACTS
-   Premium downloadable deliverable system
    ========================================================= */
 
 .nova-agent-artifacts {
   position: relative;
-
   margin-top: 16px;
   padding: 13px;
-
   overflow: hidden;
-
   border: 1px solid rgba(109, 220, 255, 0.14);
   background:
     linear-gradient(
@@ -5799,7 +5707,6 @@ h3,
       rgba(255, 255, 255, 0.018) 45%,
       rgba(4, 8, 12, 0.34)
     );
-
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.035),
     0 16px 38px rgba(0, 0, 0, 0.18),
@@ -5808,15 +5715,11 @@ h3,
 
 .nova-agent-artifacts::before {
   content: "";
-
   position: absolute;
-
   top: 0;
   left: 14px;
   right: 14px;
-
   height: 1px;
-
   background:
     linear-gradient(
       90deg,
@@ -5824,30 +5727,21 @@ h3,
       rgba(109, 220, 255, 0.38),
       transparent
     );
-
   opacity: 0.8;
 }
 
 .nova-agent-artifacts::after {
   content: "";
-
   position: absolute;
-
   width: 120px;
   height: 120px;
-
   top: -70px;
   right: -55px;
-
   border-radius: 50%;
-
   background:
     rgba(109, 220, 255, 0.055);
-
   filter: blur(24px);
-
   pointer-events: none;
-
   transition:
     transform 350ms var(--ease-out),
     opacity 350ms ease;
@@ -5858,23 +5752,14 @@ h3,
   opacity: 1;
 }
 
-/* =========================================================
-   ARTIFACT HEADER
-   ========================================================= */
-
 .nova-agent-artifacts-header {
   position: relative;
-
   z-index: 2;
-
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   gap: 12px;
-
   padding: 0 2px 10px;
-
   border-bottom: 1px solid
     rgba(180, 215, 235, 0.065);
 }
@@ -5883,31 +5768,22 @@ h3,
   display: flex;
   align-items: center;
   gap: 8px;
-
   color: #bfeaf5;
-
   font-size: 8px;
   font-weight: 700;
-
   letter-spacing: 0.17em;
 }
 
 .nova-agent-artifacts-header span::before {
   content: "";
-
   width: 5px;
   height: 5px;
-
   flex: 0 0 auto;
-
   border-radius: 50%;
-
   background: var(--nova-accent);
-
   box-shadow:
     0 0 0 3px rgba(109, 220, 255, 0.06),
     0 0 12px rgba(109, 220, 255, 0.48);
-
   animation:
     nova-artifact-status-pulse
     2s
@@ -5917,59 +5793,39 @@ h3,
 
 .nova-agent-artifacts-header small {
   color: #5f7786;
-
   font-family: var(--font-mono);
-
   font-size: 7px;
-
   letter-spacing: 0.12em;
 }
 
-/* =========================================================
-   ARTIFACT LIST
-   ========================================================= */
-
 .nova-agent-artifact-list {
   position: relative;
-
   z-index: 2;
-
   display: flex;
   flex-direction: column;
-
   gap: 7px;
-
   margin-top: 9px;
 }
 
 .nova-agent-artifact {
   position: relative;
-
   display: grid;
-
   grid-template-columns:
     34px
     minmax(0, 1fr)
     auto;
-
   align-items: center;
-
   gap: 10px;
-
   min-height: 58px;
-
   padding: 8px;
-
   border: 1px solid
     rgba(180, 215, 235, 0.075);
-
   background:
     linear-gradient(
       135deg,
       rgba(255, 255, 255, 0.032),
       rgba(255, 255, 255, 0.012)
     );
-
   transition:
     transform 180ms var(--ease-out),
     border-color 180ms ease,
@@ -5979,50 +5835,36 @@ h3,
 
 .nova-agent-artifact:hover {
   transform: translateY(-1px);
-
   border-color:
     rgba(109, 220, 255, 0.19);
-
   background:
     linear-gradient(
       135deg,
       rgba(109, 220, 255, 0.045),
       rgba(255, 255, 255, 0.018)
     );
-
   box-shadow:
     0 10px 26px rgba(0, 0, 0, 0.16),
     0 0 20px rgba(109, 220, 255, 0.035);
 }
 
-/* =========================================================
-   ARTIFACT ICON
-   ========================================================= */
-
 .nova-agent-artifact-icon {
   position: relative;
-
   width: 34px;
   height: 38px;
-
   display: grid;
   place-items: center;
-
   border: 1px solid
     rgba(109, 220, 255, 0.16);
-
   background:
     linear-gradient(
       145deg,
       rgba(109, 220, 255, 0.08),
       rgba(109, 220, 255, 0.025)
     );
-
   color: #a9eaff;
-
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.035);
-
   transition:
     border-color 180ms ease,
     background 180ms ease,
@@ -6034,126 +5876,83 @@ h3,
 .nova-agent-artifact:hover
 .nova-agent-artifact-icon {
   transform: translateY(-1px);
-
   color: #e5fbff;
-
   border-color:
     rgba(109, 220, 255, 0.3);
-
   background:
     linear-gradient(
       145deg,
       rgba(109, 220, 255, 0.12),
       rgba(109, 220, 255, 0.04)
     );
-
   box-shadow:
     0 0 16px rgba(109, 220, 255, 0.06);
 }
 
-/* Tiny technical corner mark */
 .nova-agent-artifact-icon::after {
   content: "";
-
   position: absolute;
-
   right: 3px;
   bottom: 3px;
-
   width: 5px;
   height: 5px;
-
   border-right: 1px solid
     rgba(109, 220, 255, 0.4);
-
   border-bottom: 1px solid
     rgba(109, 220, 255, 0.4);
 }
 
-/* =========================================================
-   ARTIFACT INFORMATION
-   ========================================================= */
-
 .nova-agent-artifact-info {
   min-width: 0;
-
   display: flex;
   flex-direction: column;
-
   gap: 4px;
 }
 
 .nova-agent-artifact-info strong {
   overflow: hidden;
-
   color: #eaf7fb;
-
   font-size: 11px;
   font-weight: 600;
-
   line-height: 1.3;
-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .nova-agent-artifact-info small {
   overflow: hidden;
-
   color: #718897;
-
   font-family: var(--font-mono);
-
   font-size: 7px;
-
   line-height: 1.2;
-
   letter-spacing: 0.09em;
-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* =========================================================
-   DOWNLOAD BUTTON
-   ========================================================= */
-
 .nova-agent-artifact-download {
   position: relative;
-
   height: 34px;
-
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
   gap: 7px;
-
   flex: 0 0 auto;
-
   padding: 0 11px;
-
   overflow: hidden;
-
   border: 1px solid
     rgba(109, 220, 255, 0.2);
-
   background:
     linear-gradient(
       145deg,
       rgba(109, 220, 255, 0.10),
       rgba(109, 220, 255, 0.035)
     );
-
   color: #dff8ff;
-
   text-decoration: none;
-
   font-size: 7px;
   font-weight: 700;
-
   letter-spacing: 0.13em;
-
   transition:
     transform 180ms var(--ease-out),
     color 180ms ease,
@@ -6164,11 +5963,8 @@ h3,
 
 .nova-agent-artifact-download::before {
   content: "";
-
   position: absolute;
-
   inset: 0;
-
   background:
     linear-gradient(
       105deg,
@@ -6176,9 +5972,7 @@ h3,
       rgba(255, 255, 255, 0.11),
       transparent 82%
     );
-
   transform: translateX(-120%);
-
   transition:
     transform 500ms var(--ease-out);
 }
@@ -6186,7 +5980,6 @@ h3,
 .nova-agent-artifact-download svg,
 .nova-agent-artifact-download span {
   position: relative;
-
   z-index: 2;
 }
 
@@ -6197,19 +5990,15 @@ h3,
 
 .nova-agent-artifact-download:hover {
   transform: translateY(-1px);
-
   color: #ffffff;
-
   border-color:
     rgba(109, 220, 255, 0.4);
-
   background:
     linear-gradient(
       145deg,
       rgba(109, 220, 255, 0.17),
       rgba(109, 220, 255, 0.06)
     );
-
   box-shadow:
     0 0 22px rgba(109, 220, 255, 0.08),
     inset 0 1px rgba(255, 255, 255, 0.045);
@@ -6226,10 +6015,6 @@ h3,
 .nova-agent-artifact-download:active {
   transform: translateY(0);
 }
-
-/* =========================================================
-   ARTIFACT ENTRY ANIMATION
-   ========================================================= */
 
 .nova-agent-artifact {
   animation:
@@ -6276,10 +6061,6 @@ h3,
   }
 }
 
-/* =========================================================
-   MOBILE ARTIFACT SYSTEM
-   ========================================================= */
-
 @media (max-width: 600px) {
   .nova-agent-artifacts {
     padding: 11px;
@@ -6295,13 +6076,11 @@ h3,
     grid-template-columns:
       34px
       minmax(0, 1fr);
-
     align-items: center;
   }
 
   .nova-agent-artifact-download {
     grid-column: 1 / -1;
-
     width: 100%;
   }
 }
@@ -6314,6 +6093,7 @@ h3,
     transition: none;
   }
 }
+
 /* =========================================================
    NOVA MARKDOWN — PREMIUM RESPONSE SYSTEM
    ========================================================= */
@@ -6328,8 +6108,6 @@ h3,
   word-break: break-word;
 }
 
-/* ---------- paragraphs ---------- */
-
 .nova-markdown p {
   margin: 0 0 0.9rem;
 }
@@ -6337,8 +6115,6 @@ h3,
 .nova-markdown p:last-child {
   margin-bottom: 0;
 }
-
-/* ---------- headings ---------- */
 
 .nova-markdown h1,
 .nova-markdown h2,
@@ -6375,8 +6151,6 @@ h3,
   margin-top: 0;
 }
 
-/* ---------- emphasis ---------- */
-
 .nova-markdown strong {
   color: #ffffff;
   font-weight: 700;
@@ -6385,8 +6159,6 @@ h3,
 .nova-markdown em {
   color: rgba(220, 232, 240, 0.92);
 }
-
-/* ---------- lists ---------- */
 
 .nova-markdown ul,
 .nova-markdown ol {
@@ -6403,15 +6175,11 @@ h3,
   color: rgba(190, 225, 242, 0.75);
 }
 
-/* ---------- nested lists ---------- */
-
 .nova-markdown li > ul,
 .nova-markdown li > ol {
   margin-top: 0.3rem;
   margin-bottom: 0.35rem;
 }
-
-/* ---------- links ---------- */
 
 .nova-markdown a {
   color: #dcecf5;
@@ -6429,8 +6197,6 @@ h3,
   text-shadow: 0 0 12px rgba(190, 225, 242, 0.28);
 }
 
-/* ---------- blockquote ---------- */
-
 .nova-markdown blockquote {
   margin: 1rem 0;
   padding: 0.75rem 1rem;
@@ -6444,8 +6210,6 @@ h3,
   margin: 0;
 }
 
-/* ---------- horizontal rule ---------- */
-
 .nova-markdown hr {
   height: 1px;
   margin: 1.25rem 0;
@@ -6457,8 +6221,6 @@ h3,
     transparent
   );
 }
-
-/* ---------- inline code ---------- */
 
 .nova-markdown code {
   font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
@@ -6472,8 +6234,6 @@ h3,
   background: rgba(255, 255, 255, 0.045);
   color: #eaf6fb;
 }
-
-/* ---------- code blocks ---------- */
 
 .nova-markdown pre {
   margin: 1rem 0;
@@ -6498,8 +6258,6 @@ h3,
   color: rgba(235, 244, 249, 0.92);
   line-height: 1.65;
 }
-
-/* ---------- tables ---------- */
 
 .nova-markdown table {
   width: 100%;
@@ -6540,15 +6298,11 @@ h3,
   color: rgba(225, 236, 242, 0.86);
 }
 
-/* ---------- table responsiveness ---------- */
-
 .nova-markdown table {
   display: block;
   overflow-x: auto;
   white-space: nowrap;
 }
-
-/* ---------- first / last spacing ---------- */
 
 .nova-markdown > :first-child {
   margin-top: 0;
@@ -6557,8 +6311,6 @@ h3,
 .nova-markdown > :last-child {
   margin-bottom: 0;
 }
-
-/* ---------- mobile ---------- */
 
 @media (max-width: 700px) {
   .nova-markdown {
@@ -6581,5 +6333,2789 @@ h3,
   .nova-markdown th,
   .nova-markdown td {
     padding: 0.58rem 0.65rem;
+  }
+}
+
+/* =========================================================
+   NOVA KNOWLEDGE VAULT — V2
+   ========================================================= */
+
+.nova-knowledge-page {
+  position: relative;
+  width: 100%;
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 30px 32px 60px;
+}
+
+.nova-knowledge-page::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 7%;
+  right: 7%;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(109, 220, 255, 0.14),
+      transparent
+    );
+}
+
+.nova-knowledge-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 26px;
+  margin-bottom: 20px;
+}
+
+.nova-knowledge-header h1 {
+  margin-top: 10px;
+  color: #f2f8fb;
+  font-family: var(--font-display);
+  font-size: clamp(31px, 4vw, 54px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.015em;
+}
+
+.nova-knowledge-header p {
+  max-width: 700px;
+  margin-top: 12px;
+  color: #7f95a3;
+  font-size: 12px;
+  line-height: 1.72;
+}
+
+.nova-knowledge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 10px 13px;
+  border: 1px solid rgba(109, 220, 255, 0.13);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.05),
+      rgba(255, 255, 255, 0.014)
+    );
+  color: #8da9b7;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.nova-knowledge-global-error {
+  position: relative;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(238, 146, 146, 0.18);
+  border-left: 2px solid rgba(238, 146, 146, 0.72);
+  background: rgba(238, 146, 146, 0.035);
+}
+
+.nova-knowledge-global-error > span {
+  flex: 1;
+}
+
+.nova-knowledge-global-error > button {
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  color: #b78686;
+  background: transparent;
+  cursor: pointer;
+}
+
+.nova-knowledge-global-error > button:hover {
+  color: #ffd1d1;
+}
+
+.nova-knowledge-toast {
+  position: fixed;
+  top: 82px;
+  right: 28px;
+  z-index: 120;
+  min-width: 280px;
+  max-width: min(420px, calc(100vw - 30px));
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px solid rgba(109, 220, 255, 0.16);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 18, 25, 0.97),
+      rgba(5, 9, 14, 0.98)
+    );
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(109, 220, 255, 0.035);
+  color: #dbeef4;
+  font-size: 10px;
+}
+
+.nova-knowledge-toast.is-success {
+  border-color: rgba(123, 224, 170, 0.17);
+}
+
+.nova-knowledge-toast.is-success svg {
+  color: var(--nova-success);
+}
+
+.nova-knowledge-toast.is-error {
+  border-color: rgba(238, 146, 146, 0.2);
+}
+
+.nova-knowledge-toast.is-error svg {
+  color: var(--nova-danger);
+}
+
+.nova-knowledge-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.nova-knowledge-stat-card {
+  position: relative;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px;
+  overflow: hidden;
+  border: 1px solid var(--nova-border);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(11, 18, 25, 0.82),
+      rgba(6, 10, 15, 0.8)
+    );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.024);
+  transition:
+    transform 180ms var(--ease-out),
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.nova-knowledge-stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(109, 220, 255, 0.35),
+      transparent
+    );
+}
+
+.nova-knowledge-stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--nova-border-strong);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(13, 21, 29, 0.92),
+      rgba(8, 13, 19, 0.86)
+    );
+}
+
+.nova-knowledge-stat-card > svg {
+  flex: 0 0 auto;
+  color: #76b9d1;
+}
+
+.nova-knowledge-stat-card > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-stat-card span {
+  color: #566f80;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.nova-knowledge-stat-card strong {
+  color: #ebf7fc;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.nova-knowledge-workspace {
+  display: grid;
+  grid-template-columns: 245px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+}
+
+.nova-knowledge-sidebar {
+  position: sticky;
+  top: 83px;
+  min-width: 0;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border: 1px solid var(--nova-border);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(10, 16, 23, 0.9),
+      rgba(5, 9, 14, 0.92)
+    );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.025),
+    var(--nova-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.nova-knowledge-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 17px 15px 14px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.06);
+}
+
+.nova-knowledge-sidebar-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nova-knowledge-sidebar-head span {
+  color: #526b7c;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.nova-knowledge-sidebar-head strong {
+  color: #dfeef4;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.nova-knowledge-icon-button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(109, 220, 255, 0.14);
+  background: rgba(109, 220, 255, 0.035);
+  color: #8dc9dc;
+  cursor: pointer;
+  transition:
+    transform 170ms var(--ease-out),
+    border-color 170ms ease,
+    background 170ms ease,
+    color 170ms ease;
+}
+
+.nova-knowledge-icon-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(109, 220, 255, 0.3);
+  background: rgba(109, 220, 255, 0.07);
+  color: #e9fbff;
+}
+
+.nova-knowledge-vault-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px;
+  overflow-y: auto;
+  max-height: 470px;
+}
+
+.nova-knowledge-vault-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.nova-knowledge-vault-item {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #728998;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.nova-knowledge-vault-item:hover {
+  color: #dceef5;
+  border-color: rgba(109, 220, 255, 0.08);
+  background: rgba(109, 220, 255, 0.025);
+}
+
+.nova-knowledge-vault-item.is-active {
+  color: #eaf9ff;
+  border-color: rgba(109, 220, 255, 0.14);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(109, 220, 255, 0.075),
+      rgba(109, 220, 255, 0.015)
+    );
+}
+
+.nova-knowledge-vault-item > svg {
+  flex: 0 0 auto;
+  color: #6f9caf;
+}
+
+.nova-knowledge-vault-item.is-active > svg {
+  color: var(--nova-accent);
+}
+
+.nova-knowledge-vault-item > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-knowledge-vault-item strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-vault-item span {
+  color: #536b7a;
+  font-family: var(--font-mono);
+  font-size: 7px;
+}
+
+.nova-knowledge-mini-menu {
+  width: 27px;
+  height: 100%;
+  min-height: 31px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #4d6574;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.nova-knowledge-mini-menu:hover {
+  color: #d9f4fc;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.nova-knowledge-context-menu {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 4px;
+  z-index: 50;
+  width: 145px;
+  padding: 5px;
+  border: 1px solid rgba(180, 215, 235, 0.13);
+  background:
+    rgba(7, 12, 18, 0.98);
+  box-shadow:
+    0 22px 45px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.nova-knowledge-context-menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  color: #7f97a5;
+  cursor: pointer;
+  font-size: 8px;
+  text-align: left;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.nova-knowledge-context-menu button:hover {
+  color: #ecfaff;
+  background: rgba(109, 220, 255, 0.05);
+}
+
+.nova-knowledge-context-menu button.is-danger {
+  color: #b98484;
+}
+
+.nova-knowledge-context-menu button.is-danger:hover {
+  color: #ffd0d0;
+  background: rgba(238, 146, 146, 0.055);
+}
+
+.nova-knowledge-sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid rgba(180, 215, 235, 0.06);
+}
+
+.nova-knowledge-sidebar-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #607b89;
+}
+
+.nova-knowledge-sidebar-footer > div span {
+  flex: 1;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.nova-knowledge-sidebar-footer > div strong {
+  color: #dcecf2;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.nova-knowledge-sidebar-footer > button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 0;
+  color: #688392;
+  background: transparent;
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  transition:
+    color 160ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.nova-knowledge-sidebar-footer > button:hover {
+  color: var(--nova-accent);
+  transform: translateX(2px);
+}
+
+.nova-knowledge-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.nova-knowledge-main-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 72px;
+  padding: 13px 15px;
+  border: 1px solid var(--nova-border);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(11, 18, 25, 0.87),
+      rgba(6, 10, 15, 0.86)
+    );
+}
+
+.nova-knowledge-main-toolbar > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-main-toolbar > div:first-child > span {
+  color: #526b7b;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.nova-knowledge-main-toolbar > div:first-child > strong {
+  overflow: hidden;
+  color: #ecf8fc;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-main-toolbar > div:first-child > small {
+  color: #5c7482;
+  font-family: var(--font-mono);
+  font-size: 7px;
+}
+
+.nova-knowledge-toolbar-actions {
+  display: flex;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.nova-knowledge-toolbar-actions .nova-primary-action,
+.nova-knowledge-toolbar-actions .nova-secondary-action {
+  width: auto;
+  margin-top: 0;
+  min-height: 37px;
+  padding: 0 12px;
+}
+
+.nova-secondary-action,
+.nova-danger-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 37px;
+  padding: 0 12px;
+  border: 1px solid var(--nova-border);
+  background: rgba(255, 255, 255, 0.025);
+  color: #91a8b5;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  transition:
+    transform 170ms var(--ease-out),
+    border-color 170ms ease,
+    background 170ms ease,
+    color 170ms ease;
+}
+
+.nova-secondary-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(109, 220, 255, 0.19);
+  background: rgba(109, 220, 255, 0.045);
+  color: #e8faff;
+}
+
+.nova-secondary-action:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.nova-knowledge-toolbar-actions
+.nova-primary-action {
+  width: auto;
+}
+
+.nova-knowledge-upload-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 13px;
+  border: 1px solid rgba(109, 220, 255, 0.13);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.04),
+      rgba(255, 255, 255, 0.014)
+    );
+}
+
+.nova-knowledge-upload-panel > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.nova-knowledge-upload-panel > div:first-child > svg {
+  flex: 0 0 auto;
+  color: #8bd3e6;
+}
+
+.nova-knowledge-upload-panel > div:first-child > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-knowledge-upload-panel strong {
+  overflow: hidden;
+  color: #e7f4f8;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-upload-panel span {
+  color: #607a88;
+  font-family: var(--font-mono);
+  font-size: 7px;
+}
+
+.nova-knowledge-upload-panel > div:last-child {
+  display: flex;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.nova-knowledge-upload-panel
+.nova-primary-action,
+.nova-knowledge-upload-panel
+.nova-secondary-action {
+  width: auto;
+  margin: 0;
+}
+
+.nova-knowledge-create-callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(109, 220, 255, 0.13);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.045),
+      rgba(255, 255, 255, 0.014)
+    );
+}
+
+.nova-knowledge-create-callout > svg {
+  flex: 0 0 auto;
+  color: #8bd4e7;
+}
+
+.nova-knowledge-create-callout > div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-create-callout strong {
+  color: #e7f6fb;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+}
+
+.nova-knowledge-create-callout span {
+  color: #617a89;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.nova-knowledge-create-callout .nova-primary-action {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.nova-knowledge-search-card {
+  position: relative;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--nova-border);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 17, 24, 0.86),
+      rgba(5, 9, 14, 0.88)
+    );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.024);
+}
+
+.nova-knowledge-search-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 25px;
+  right: 25px;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(109, 220, 255, 0.17),
+      transparent
+    );
+}
+
+.nova-knowledge-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 12px;
+}
+
+.nova-knowledge-card-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-card-heading span {
+  color: #536c7c;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.nova-knowledge-card-heading strong {
+  color: #deedf2;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.nova-knowledge-card-heading > svg {
+  flex: 0 0 auto;
+  color: #709fb0;
+}
+
+.nova-knowledge-search {
+  display: flex;
+  gap: 7px;
+}
+
+.nova-knowledge-search input {
+  min-width: 0;
+  flex: 1;
+  height: 41px;
+  padding: 0 12px;
+  border: 1px solid rgba(180, 215, 235, 0.1);
+  outline: 0;
+  background: rgba(0, 0, 0, 0.2);
+  color: #edf8fc;
+  font-size: 11px;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.nova-knowledge-search input::placeholder {
+  color: #536b79;
+}
+
+.nova-knowledge-search input:focus {
+  border-color: rgba(109, 220, 255, 0.28);
+  background: rgba(109, 220, 255, 0.02);
+  box-shadow:
+    0 0 0 1px rgba(109, 220, 255, 0.025),
+    0 0 22px rgba(109, 220, 255, 0.035);
+}
+
+.nova-knowledge-search button {
+  width: 42px;
+  height: 41px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(109, 220, 255, 0.13);
+  background: rgba(109, 220, 255, 0.035);
+  color: #9bc9d8;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms var(--ease-out);
+}
+
+.nova-knowledge-search button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(109, 220, 255, 0.28);
+  background: rgba(109, 220, 255, 0.07);
+  color: #e8fbff;
+}
+
+.nova-knowledge-search button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nova-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 370px;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 2px;
+}
+
+.nova-search-results::-webkit-scrollbar {
+  width: 4px;
+}
+
+.nova-search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nova-search-results::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nova-search-result {
+  position: relative;
+  padding: 11px 12px;
+  border: 1px solid rgba(180, 215, 235, 0.065);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.022),
+      rgba(255, 255, 255, 0.009)
+    );
+  transition:
+    border-color 170ms ease,
+    background 170ms ease,
+    transform 170ms var(--ease-out);
+}
+
+.nova-search-result:hover {
+  transform: translateY(-1px);
+  border-color: rgba(109, 220, 255, 0.15);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.032),
+      rgba(255, 255, 255, 0.012)
+    );
+}
+
+.nova-search-result-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.nova-search-result-meta span {
+  color: #5b7482;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  letter-spacing: 0.12em;
+}
+
+.nova-search-result-meta span:first-child {
+  color: #8bbdce;
+}
+
+.nova-search-result p {
+  margin: 0 0 7px;
+  color: #ccdae1;
+  font-size: 11px;
+  line-height: 1.68;
+}
+
+.nova-search-result small {
+  color: #4d6675;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  letter-spacing: 0.06em;
+}
+
+.nova-knowledge-file-section,
+.nova-knowledge-recent-section,
+.nova-knowledge-bin-section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--nova-border);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 16, 23, 0.84),
+      rgba(5, 9, 14, 0.88)
+    );
+}
+
+.nova-knowledge-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 13px;
+}
+
+.nova-knowledge-section-title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-section-title span {
+  color: #536c7c;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.nova-knowledge-section-title strong {
+  color: #e1eef3;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.nova-knowledge-section-count {
+  min-width: 27px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  border: 1px solid rgba(109, 220, 255, 0.1);
+  background: rgba(109, 220, 255, 0.025);
+  color: #8eb8c7 !important;
+  font-family: var(--font-mono);
+  font-size: 7px !important;
+}
+
+.nova-knowledge-file-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.nova-knowledge-file-list-head,
+.nova-knowledge-file-row {
+  display: grid;
+  grid-template-columns:
+    minmax(280px, 2.6fr)
+    minmax(120px, 1fr)
+    95px
+    75px
+    135px
+    38px;
+  gap: 9px;
+  align-items: center;
+}
+
+.nova-knowledge-file-list-head {
+  padding: 0 9px 8px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.06);
+}
+
+.nova-knowledge-file-list-head span {
+  color: #4f6776;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.nova-knowledge-file-row {
+  position: relative;
+  min-height: 64px;
+  padding: 8px 9px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.05);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.nova-knowledge-file-row:last-child {
+  border-bottom: 0;
+}
+
+.nova-knowledge-file-row:hover {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(109, 220, 255, 0.025),
+      transparent
+    );
+  border-color: rgba(109, 220, 255, 0.08);
+}
+
+.nova-knowledge-file-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nova-knowledge-checkbox {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 1px solid rgba(180, 215, 235, 0.11);
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--nova-accent);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.nova-knowledge-checkbox:hover {
+  border-color: rgba(109, 220, 255, 0.26);
+  background: rgba(109, 220, 255, 0.04);
+}
+
+.nova-knowledge-checkbox > span {
+  width: 5px;
+  height: 5px;
+  border: 1px solid #4d6573;
+}
+
+.nova-knowledge-file-icon {
+  width: 31px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 31px;
+  border: 1px solid rgba(109, 220, 255, 0.12);
+  background: rgba(109, 220, 255, 0.025);
+  color: #86b9c9;
+}
+
+.nova-knowledge-file-main > div:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nova-knowledge-file-main strong {
+  overflow: hidden;
+  color: #dcebf0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-file-main span {
+  color: #526a79;
+  font-family: var(--font-mono);
+  font-size: 6px;
+}
+
+.nova-knowledge-file-vault {
+  overflow: hidden;
+  color: #7f98a6;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-file-row > span:nth-child(3),
+.nova-knowledge-file-row > span:nth-child(4),
+.nova-knowledge-file-row > span:nth-child(5) {
+  color: #637b89;
+  font-family: var(--font-mono);
+  font-size: 6px;
+}
+
+.nova-indexed-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 1px solid rgba(123, 224, 170, 0.11);
+  background: rgba(123, 224, 170, 0.025);
+  color: #91c4a9 !important;
+  font-family: var(--font-mono);
+  font-size: 6px !important;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.nova-knowledge-pending-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid rgba(228, 196, 122, 0.11);
+  background: rgba(228, 196, 122, 0.02);
+  color: #a79262 !important;
+  font-family: var(--font-mono);
+  font-size: 6px !important;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nova-knowledge-file-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.nova-knowledge-file-actions
+.nova-knowledge-mini-menu {
+  width: 28px;
+  height: 28px;
+}
+
+.nova-knowledge-file-menu {
+  top: 31px;
+  right: 0;
+}
+
+.nova-knowledge-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.nova-knowledge-recent-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid rgba(180, 215, 235, 0.065);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.021),
+      rgba(255, 255, 255, 0.009)
+    );
+  transition:
+    transform 170ms var(--ease-out),
+    border-color 170ms ease,
+    background 170ms ease;
+}
+
+.nova-knowledge-recent-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(109, 220, 255, 0.13);
+  background:
+    rgba(109, 220, 255, 0.026);
+}
+
+.nova-knowledge-recent-card > svg {
+  flex: 0 0 auto;
+  color: #79aabd;
+}
+
+.nova-knowledge-recent-card > div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-knowledge-recent-card strong {
+  overflow: hidden;
+  color: #d9e9ee;
+  font-size: 8px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-recent-card span {
+  color: #5a7381;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  letter-spacing: 0.07em;
+}
+
+.nova-knowledge-recent-card small {
+  color: #425866;
+  font-family: var(--font-mono);
+  font-size: 6px;
+}
+
+.nova-knowledge-add-vault-button {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 1px solid rgba(109, 220, 255, 0.13);
+  background: rgba(109, 220, 255, 0.025);
+  color: #82b8c9;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.nova-knowledge-add-vault-button:hover {
+  color: #e9fbff;
+  border-color: rgba(109, 220, 255, 0.28);
+  background: rgba(109, 220, 255, 0.055);
+}
+
+.nova-knowledge-bin-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.nova-knowledge-bin-row {
+  display: grid;
+  grid-template-columns: 18px 20px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-height: 60px;
+  padding: 8px 1px;
+  border-bottom: 1px solid rgba(180, 215, 235, 0.05);
+}
+
+.nova-knowledge-bin-row:last-child {
+  border-bottom: 0;
+}
+
+.nova-knowledge-bin-row > svg {
+  color: #708995;
+}
+
+.nova-knowledge-bin-row > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-knowledge-bin-row > div strong {
+  overflow: hidden;
+  color: #d4e2e7;
+  font-size: 8px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-bin-row > div span {
+  color: #526b79;
+  font-family: var(--font-mono);
+  font-size: 6px;
+}
+
+.nova-knowledge-bin-row > div small {
+  overflow: hidden;
+  color: #455d6b;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-bin-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 5px;
+}
+
+.nova-knowledge-bin-actions
+.nova-secondary-action,
+.nova-knowledge-bin-actions
+.nova-danger-action {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 6px;
+}
+
+.nova-danger-action {
+  border-color: rgba(238, 146, 146, 0.14);
+  background: rgba(238, 146, 146, 0.025);
+  color: #ae7f7f;
+}
+
+.nova-danger-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(238, 146, 146, 0.26);
+  background: rgba(238, 146, 146, 0.055);
+  color: #ffd3d3;
+}
+
+.nova-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 70px;
+  padding: 15px;
+  color: #516978;
+  text-align: center;
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.nova-document-empty {
+  border: 1px dashed rgba(180, 215, 235, 0.075);
+  background: rgba(255, 255, 255, 0.008);
+}
+
+/* =========================================================
+   MODALS
+   ========================================================= */
+
+.nova-knowledge-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(11px);
+  -webkit-backdrop-filter: blur(11px);
+}
+
+.nova-knowledge-modal {
+  width: min(480px, 100%);
+  padding: 17px;
+  border: 1px solid rgba(180, 215, 235, 0.14);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 17, 24, 0.98),
+      rgba(5, 9, 14, 0.99)
+    );
+  box-shadow:
+    0 40px 100px rgba(0, 0, 0, 0.56),
+    0 0 50px rgba(109, 220, 255, 0.045);
+}
+
+.nova-knowledge-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.nova-knowledge-modal-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nova-knowledge-modal-head span {
+  color: #526b7a;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.nova-knowledge-modal-head strong {
+  color: #e8f5f9;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+}
+
+.nova-knowledge-modal-head > button {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(180, 215, 235, 0.08);
+  background: rgba(255, 255, 255, 0.018);
+  color: #718896;
+  cursor: pointer;
+}
+
+.nova-knowledge-modal-head > button:hover {
+  color: #ecfaff;
+  border-color: rgba(109, 220, 255, 0.18);
+}
+
+.nova-knowledge-modal > input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(180, 215, 235, 0.1);
+  outline: 0;
+  background: rgba(0, 0, 0, 0.2);
+  color: #edf8fc;
+  font-size: 11px;
+}
+
+.nova-knowledge-modal > input:focus {
+  border-color: rgba(109, 220, 255, 0.26);
+  box-shadow: 0 0 20px rgba(109, 220, 255, 0.035);
+}
+
+.nova-knowledge-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.nova-knowledge-modal-actions
+.nova-primary-action,
+.nova-knowledge-modal-actions
+.nova-secondary-action {
+  width: auto;
+  min-height: 36px;
+  margin: 0;
+}
+
+.nova-knowledge-move-file {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(180, 215, 235, 0.065);
+  background: rgba(255, 255, 255, 0.016);
+}
+
+.nova-knowledge-move-file > svg {
+  color: #7fb0c0;
+}
+
+.nova-knowledge-move-file > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-knowledge-move-file strong {
+  overflow: hidden;
+  color: #e0edf2;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-move-file span {
+  color: #57707f;
+  font-size: 8px;
+}
+
+.nova-knowledge-vault-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.nova-knowledge-vault-select-list button {
+  width: 100%;
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(180, 215, 235, 0.065);
+  background: rgba(255, 255, 255, 0.014);
+  color: #8198a5;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.nova-knowledge-vault-select-list button:hover {
+  transform: translateX(2px);
+  border-color: rgba(109, 220, 255, 0.16);
+  background: rgba(109, 220, 255, 0.035);
+  color: #e5f8fd;
+}
+
+.nova-knowledge-vault-select-list button span {
+  flex: 1;
+  font-size: 9px;
+}
+
+.nova-knowledge-vault-select-list button svg {
+  flex: 0 0 auto;
+}
+
+/* =========================================================
+   NOVA KNOWLEDGE VAULT — PREMIUM FILE PREVIEW
+   Image / PDF / Document / Text readability
+   ========================================================= */
+
+.nova-knowledge-preview-modal {
+  width: min(1080px, 100%);
+  height: min(88vh, 900px);
+  max-height: 88vh;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 0;
+
+  overflow: hidden;
+
+  border: 1px solid rgba(180, 215, 235, 0.16);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 17, 24, 0.985),
+      rgba(4, 8, 13, 0.995)
+    );
+
+  box-shadow:
+    0 45px 120px rgba(0, 0, 0, 0.65),
+    0 0 70px rgba(109, 220, 255, 0.05);
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head {
+  position: relative;
+
+  flex: 0 0 auto;
+
+  min-height: 70px;
+
+  margin: 0;
+
+  padding: 15px 18px;
+
+  border-bottom: 1px solid rgba(180, 215, 235, 0.08);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.025),
+      rgba(255, 255, 255, 0.008)
+    );
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head::before {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  left: 8%;
+  right: 8%;
+
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(109, 220, 255, 0.3),
+      transparent
+    );
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head > div {
+  min-width: 0;
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head span {
+  color: #6d8b9b;
+
+  font-family: var(--font-mono);
+
+  font-size: 8px;
+  font-weight: 700;
+
+  letter-spacing: 0.16em;
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head strong {
+  display: block;
+
+  margin-top: 5px;
+
+  overflow: hidden;
+
+  color: #f2fbff;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  line-height: 1.35;
+
+  letter-spacing: 0.02em;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-knowledge-preview-modal
+.nova-knowledge-modal-head > button {
+  width: 34px;
+  height: 34px;
+}
+
+.nova-knowledge-preview-meta {
+  flex: 0 0 auto;
+
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 7px;
+
+  margin: 0;
+
+  padding: 11px 16px;
+
+  border-bottom: 1px solid rgba(180, 215, 235, 0.055);
+
+  background:
+    rgba(255, 255, 255, 0.012);
+}
+
+.nova-knowledge-preview-meta span {
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 27px;
+
+  padding: 5px 9px;
+
+  border: 1px solid rgba(180, 215, 235, 0.085);
+
+  background:
+    rgba(255, 255, 255, 0.022);
+
+  color: #8eaab8;
+
+  font-family: var(--font-mono);
+
+  font-size: 8px;
+  font-weight: 600;
+
+  letter-spacing: 0.08em;
+}
+
+.nova-knowledge-preview-body {
+  flex: 1 1 auto;
+
+  min-height: 0;
+
+  overflow: auto;
+
+  padding: 18px;
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(109, 220, 255, 0.035),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(4, 8, 13, 0.7),
+      rgba(2, 5, 8, 0.94)
+    );
+
+  scrollbar-gutter: stable;
+}
+
+.nova-knowledge-preview-body::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.nova-knowledge-preview-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nova-knowledge-preview-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+
+  background:
+    rgba(180, 215, 235, 0.12);
+}
+
+.nova-knowledge-preview-body::-webkit-scrollbar-thumb:hover {
+  background:
+    rgba(109, 220, 255, 0.24);
+}
+
+/* =========================================================
+   IMAGE PREVIEW
+   ========================================================= */
+
+.nova-knowledge-preview-image-wrap {
+  width: 100%;
+  min-height: 300px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 24px;
+
+  border: 1px solid rgba(180, 215, 235, 0.09);
+
+  background:
+    repeating-conic-gradient(
+      rgba(255, 255, 255, 0.025) 0% 25%,
+      rgba(255, 255, 255, 0.012) 0% 50%
+    )
+    50% / 24px 24px;
+
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.nova-knowledge-preview-image {
+  display: block;
+
+  max-width: 100%;
+  max-height: 64vh;
+
+  width: auto;
+  height: auto;
+
+  object-fit: contain;
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  background:
+    #060b10;
+
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.52),
+    0 0 35px rgba(109, 220, 255, 0.035);
+}
+
+/* =========================================================
+   PDF / FILE FRAME
+   ========================================================= */
+
+.nova-knowledge-preview-frame-wrap {
+  width: 100%;
+  height: 64vh;
+  min-height: 420px;
+
+  overflow: hidden;
+
+  border: 1px solid rgba(180, 215, 235, 0.09);
+
+  background:
+    #05090e;
+
+  box-shadow:
+    0 20px 55px rgba(0, 0, 0, 0.3);
+}
+
+.nova-knowledge-preview-frame {
+  width: 100%;
+  height: 100%;
+
+  display: block;
+
+  border: 0;
+
+  background: #ffffff;
+}
+
+/* =========================================================
+   DOCUMENT / TEXT PREVIEW
+   ========================================================= */
+
+.nova-knowledge-preview-text-card {
+  width: 100%;
+
+  padding: 24px 26px;
+
+  border: 1px solid rgba(180, 215, 235, 0.09);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.025),
+      rgba(255, 255, 255, 0.012)
+    );
+
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.nova-knowledge-preview-content {
+  min-height: 0;
+
+  margin: 0;
+
+  padding: 0;
+
+  overflow: visible;
+
+  border: 0;
+
+  background: transparent;
+
+  color: #eef7fb;
+
+  font-family:
+    "Space Grotesk",
+    system-ui,
+    sans-serif;
+
+  font-size: 15px;
+
+  font-weight: 400;
+
+  line-height: 1.85;
+
+  letter-spacing: 0.005em;
+
+  white-space: pre-wrap;
+
+  overflow-wrap: anywhere;
+
+  text-rendering: optimizeLegibility;
+}
+
+.nova-knowledge-preview-content::selection {
+  color: #031016;
+
+  background:
+    rgba(109, 220, 255, 0.78);
+}
+
+.nova-knowledge-preview-body
+.nova-empty-state {
+  min-height: 260px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+
+  gap: 10px;
+
+  color: #7f98a6;
+
+  font-size: 11px;
+
+  line-height: 1.6;
+}
+
+.nova-knowledge-preview-body
+.nova-empty-state svg {
+  color: #79b8ca;
+}
+
+/* =========================================================
+   MOBILE PREVIEW
+   ========================================================= */
+
+@media (max-width: 780px) {
+  .nova-knowledge-preview-modal {
+    width: 100%;
+    height: 90vh;
+    max-height: 90vh;
+  }
+
+  .nova-knowledge-preview-body {
+    padding: 10px;
+  }
+
+  .nova-knowledge-preview-image-wrap {
+    min-height: 220px;
+    padding: 12px;
+  }
+
+  .nova-knowledge-preview-image {
+    max-height: 60vh;
+  }
+
+  .nova-knowledge-preview-frame-wrap {
+    height: 62vh;
+    min-height: 320px;
+  }
+
+  .nova-knowledge-preview-text-card {
+    padding: 18px;
+  }
+
+  .nova-knowledge-preview-content {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+}
+
+@media (max-width: 520px) {
+  .nova-knowledge-preview-modal
+  .nova-knowledge-modal-head {
+    min-height: 62px;
+    padding: 12px;
+  }
+
+  .nova-knowledge-preview-modal
+  .nova-knowledge-modal-head strong {
+    font-size: 11px;
+  }
+
+  .nova-knowledge-preview-meta {
+    padding: 8px 10px;
+  }
+
+  .nova-knowledge-preview-meta span {
+    min-height: 24px;
+    font-size: 7px;
+  }
+
+  .nova-knowledge-preview-body {
+    padding: 8px;
+  }
+
+  /* IMPORTANT: keep preview text readable on small screens */
+  .nova-knowledge-preview-content {
+    max-height: none;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-knowledge-preview-image,
+  .nova-knowledge-preview-frame {
+    scroll-behavior: auto;
+  }
+}
+
+/* =========================================================
+   SELECTION BAR
+   ========================================================= */
+
+.nova-knowledge-selection-bar {
+  position: fixed;
+  left: calc(264px + 24px);
+  right: 24px;
+  bottom: 18px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 43px;
+  padding: 0 12px;
+  border: 1px solid rgba(109, 220, 255, 0.16);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(8, 15, 21, 0.96),
+      rgba(4, 8, 12, 0.98)
+    );
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.nova-knowledge-selection-bar span {
+  color: #b7dbe5;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.nova-knowledge-selection-bar button {
+  color: #6f8b99;
+  background: transparent;
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.nova-knowledge-selection-bar button:hover {
+  color: #e9faff;
+}
+
+.nova-knowledge-file-row,
+.nova-knowledge-recent-card,
+.nova-search-result,
+.nova-knowledge-stat-card {
+  will-change: transform;
+}
+
+@media (max-width: 1250px) {
+  .nova-knowledge-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .nova-knowledge-workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .nova-knowledge-file-list-head,
+  .nova-knowledge-file-row {
+    grid-template-columns:
+      minmax(250px, 2.4fr)
+      minmax(105px, 1fr)
+      85px
+      68px
+      110px
+      34px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .nova-knowledge-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .nova-knowledge-sidebar {
+    position: relative;
+    top: auto;
+    min-height: auto;
+  }
+
+  .nova-knowledge-vault-list {
+    max-height: 190px;
+  }
+
+  .nova-knowledge-sidebar-footer {
+    display: none;
+  }
+
+  .nova-knowledge-file-list-head {
+    display: none;
+  }
+
+  .nova-knowledge-file-row {
+    grid-template-columns:
+      minmax(0, 1fr)
+      auto
+      auto;
+    gap: 9px;
+  }
+
+  .nova-knowledge-file-vault {
+    display: none;
+  }
+
+  .nova-knowledge-file-row > span:nth-child(4),
+  .nova-knowledge-file-row > span:nth-child(5) {
+    display: none;
+  }
+
+  .nova-knowledge-file-actions {
+    grid-column: 3;
+  }
+
+  .nova-knowledge-selection-bar {
+    left: 15px;
+    right: 15px;
+  }
+}
+
+@media (max-width: 780px) {
+  .nova-knowledge-page {
+    padding: 24px 18px 45px;
+  }
+
+  .nova-knowledge-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .nova-knowledge-status {
+    align-self: flex-start;
+  }
+
+  .nova-knowledge-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .nova-knowledge-recent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nova-knowledge-main-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nova-knowledge-toolbar-actions {
+    width: 100%;
+  }
+
+  .nova-knowledge-toolbar-actions
+  .nova-primary-action,
+  .nova-knowledge-toolbar-actions
+  .nova-secondary-action {
+    flex: 1;
+  }
+
+  .nova-knowledge-upload-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nova-knowledge-upload-panel > div:last-child {
+    width: 100%;
+  }
+
+  .nova-knowledge-upload-panel
+  .nova-primary-action,
+  .nova-knowledge-upload-panel
+  .nova-secondary-action {
+    flex: 1;
+  }
+
+  .nova-knowledge-create-callout {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .nova-knowledge-create-callout .nova-primary-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 580px) {
+  .nova-knowledge-page {
+    padding: 20px 13px 36px;
+  }
+
+  .nova-knowledge-header h1 {
+    font-size: 31px;
+  }
+
+  .nova-knowledge-header p {
+    font-size: 10px;
+  }
+
+  .nova-knowledge-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
+  .nova-knowledge-stat-card {
+    min-height: 72px;
+    padding: 10px;
+  }
+
+  .nova-knowledge-stat-card strong {
+    font-size: 16px;
+  }
+
+  .nova-knowledge-main-toolbar,
+  .nova-knowledge-search-card,
+  .nova-knowledge-file-section,
+  .nova-knowledge-recent-section,
+  .nova-knowledge-bin-section {
+    padding: 12px;
+  }
+
+  .nova-knowledge-file-row {
+    grid-template-columns:
+      minmax(0, 1fr)
+      auto;
+  }
+
+  .nova-knowledge-file-row > span:nth-child(3) {
+    display: none;
+  }
+
+  .nova-knowledge-file-actions {
+    grid-column: 2;
+  }
+
+  .nova-knowledge-bin-row {
+    grid-template-columns: 18px 18px minmax(0, 1fr);
+  }
+
+  .nova-knowledge-bin-actions {
+    grid-column: 3;
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+
+  .nova-knowledge-recent-card {
+    padding: 9px;
+  }
+
+  .nova-knowledge-preview-modal {
+    height: 88vh;
+    max-height: 88vh;
+  }
+
+  /* KEEP THIS AT 13px — do not change back to 7px */
+  .nova-knowledge-preview-content {
+    max-height: none;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .nova-knowledge-modal-backdrop {
+    padding: 12px;
+  }
+
+  .nova-knowledge-toast {
+    top: 72px;
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-knowledge-stat-card,
+  .nova-knowledge-file-row,
+  .nova-knowledge-recent-card,
+  .nova-search-result,
+  .nova-knowledge-vault-item,
+  .nova-knowledge-icon-button,
+  .nova-knowledge-selection-bar {
+    transition: none;
+  }
+}
+
+/* =========================================================
+   NOVA LOCAL CHAT — KNOWLEDGE VAULT CONTEXT
+   ========================================================= */
+
+.nova-chat-knowledge-scope {
+  position: relative;
+  margin-bottom: 10px;
+  border: 1px solid rgba(109, 220, 255, 0.12);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.035),
+      rgba(255, 255, 255, 0.012)
+    );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.nova-chat-knowledge-scope-head {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px 7px 11px;
+}
+
+.nova-chat-knowledge-scope-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.nova-chat-knowledge-scope-label > svg {
+  flex: 0 0 auto;
+  color: #8ecfe0;
+  filter: drop-shadow(
+    0 0 8px rgba(109, 220, 255, 0.14)
+  );
+}
+
+.nova-chat-knowledge-scope-label > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-chat-knowledge-scope-label strong {
+  overflow: hidden;
+  color: #dcecf2;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-chat-knowledge-scope-label small {
+  overflow: hidden;
+  color: #637d8c;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.09em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-chat-knowledge-toggle {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border: 1px solid rgba(109, 220, 255, 0.12);
+  background: rgba(109, 220, 255, 0.025);
+  color: #86aebe;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms var(--ease-out);
+}
+
+.nova-chat-knowledge-toggle:hover:not(:disabled),
+.nova-chat-knowledge-toggle.is-open {
+  color: #e8fbff;
+  border-color: rgba(109, 220, 255, 0.28);
+  background: rgba(109, 220, 255, 0.055);
+  box-shadow:
+    0 0 18px rgba(109, 220, 255, 0.045);
+}
+
+.nova-chat-knowledge-toggle:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.nova-chat-knowledge-toggle svg {
+  transition:
+    transform 180ms var(--ease-out);
+}
+
+.nova-chat-knowledge-toggle.is-open svg {
+  transform: rotate(180deg);
+}
+
+.nova-chat-knowledge-toggle:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.nova-chat-knowledge-panel {
+  padding: 0 10px 10px;
+  border-top: 1px solid rgba(180, 215, 235, 0.055);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.08),
+      rgba(0, 0, 0, 0.16)
+    );
+}
+
+.nova-chat-knowledge-vault-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 9px;
+}
+
+.nova-chat-knowledge-vault-select-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.nova-chat-knowledge-vault-select-wrap > svg:first-child {
+  position: absolute;
+  left: 10px;
+  z-index: 2;
+  color: #7098a8;
+  pointer-events: none;
+}
+
+.nova-chat-knowledge-vault-select {
+  width: 100%;
+  height: 37px;
+  padding: 0 32px 0 31px;
+  border: 1px solid rgba(180, 215, 235, 0.09);
+  outline: 0;
+  appearance: none;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.025),
+      rgba(255, 255, 255, 0.01)
+    );
+  color: #dbeaf0;
+  cursor: pointer;
+  font-size: 9px;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.nova-chat-knowledge-vault-select:hover:not(:disabled) {
+  border-color: rgba(109, 220, 255, 0.16);
+  background:
+    rgba(109, 220, 255, 0.025);
+}
+
+.nova-chat-knowledge-vault-select:focus {
+  border-color: rgba(109, 220, 255, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(109, 220, 255, 0.025),
+    0 0 18px rgba(109, 220, 255, 0.035);
+}
+
+.nova-chat-knowledge-vault-select:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.nova-chat-knowledge-vault-select option {
+  color: #e8f5fa;
+  background: #081018;
+}
+
+.nova-chat-knowledge-vault-select-wrap > svg:last-child {
+  position: absolute;
+  right: 10px;
+  z-index: 2;
+  color: #668391;
+  pointer-events: none;
+}
+
+.nova-chat-knowledge-clear {
+  min-height: 37px;
+  padding: 0 10px;
+  border: 1px solid rgba(180, 215, 235, 0.085);
+  background: rgba(255, 255, 255, 0.018);
+  color: #708995;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.nova-chat-knowledge-clear:hover:not(:disabled) {
+  color: #e7f8fc;
+  border-color: rgba(109, 220, 255, 0.2);
+  background: rgba(109, 220, 255, 0.04);
+}
+
+.nova-chat-knowledge-clear:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.nova-chat-knowledge-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(180, 215, 235, 0.05);
+}
+
+.nova-chat-knowledge-files-header > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nova-chat-knowledge-files-header strong {
+  color: #a8c8d4;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.nova-chat-knowledge-files-header small {
+  color: #566f7e;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.nova-chat-knowledge-files-header > span {
+  flex: 0 0 auto;
+  color: #5d7786;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nova-chat-knowledge-files {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-right: 2px;
+}
+
+.nova-chat-knowledge-files::-webkit-scrollbar {
+  width: 3px;
+}
+
+.nova-chat-knowledge-files::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nova-chat-knowledge-files::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nova-chat-knowledge-file {
+  min-width: 0;
+  display: grid;
+  grid-template-columns:
+    16px
+    15px
+    minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid rgba(180, 215, 235, 0.055);
+  background:
+    rgba(255, 255, 255, 0.014);
+  color: #718997;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.nova-chat-knowledge-file:hover {
+  transform: translateX(1px);
+  border-color: rgba(109, 220, 255, 0.13);
+  background:
+    rgba(109, 220, 255, 0.026);
+  color: #d6edf3;
+}
+
+.nova-chat-knowledge-file.is-selected {
+  border-color: rgba(109, 220, 255, 0.2);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(109, 220, 255, 0.055),
+      rgba(109, 220, 255, 0.018)
+    );
+  color: #e4f7fc;
+}
+
+.nova-chat-knowledge-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nova-chat-knowledge-file-check {
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(180, 215, 235, 0.12);
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--nova-accent);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1;
+}
+
+.nova-chat-knowledge-file.is-selected
+.nova-chat-knowledge-file-check {
+  border-color: rgba(109, 220, 255, 0.32);
+  background: rgba(109, 220, 255, 0.075);
+  box-shadow:
+    0 0 12px rgba(109, 220, 255, 0.05);
+}
+
+.nova-chat-knowledge-file > svg {
+  flex: 0 0 auto;
+  color: #7197a6;
+}
+
+.nova-chat-knowledge-file.is-selected > svg {
+  color: #a8e5f4;
+}
+
+.nova-chat-knowledge-file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 8px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nova-chat-knowledge-empty {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed rgba(180, 215, 235, 0.07);
+  background: rgba(255, 255, 255, 0.008);
+  color: #536c79;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 6px;
+  line-height: 1.55;
+  letter-spacing: 0.07em;
+}
+
+.nova-chat-knowledge-selection {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-left: 1px solid rgba(109, 220, 255, 0.3);
+  background: rgba(109, 220, 255, 0.025);
+  color: #7699a8;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.nova-chat-knowledge-selection svg {
+  flex: 0 0 auto;
+  color: var(--nova-accent);
+}
+
+.nova-chat-knowledge-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-left: 1px solid rgba(238, 146, 146, 0.62);
+  background: rgba(238, 146, 146, 0.035);
+  color: #c08f8f;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.nova-chat-knowledge-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.nova-chat-knowledge-message-ref {
+  margin-top: -3px;
+}
+
+.nova-chat-knowledge-message-ref
+.nova-chat-message-file {
+  border-color: rgba(109, 220, 255, 0.13);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(109, 220, 255, 0.035),
+      rgba(255, 255, 255, 0.014)
+    );
+  color: #91b6c3;
+}
+
+.nova-chat-knowledge-message-ref
+.nova-chat-message-file svg {
+  color: #7fc9dd;
+}
+
+@media (max-width: 700px) {
+  .nova-chat-knowledge-scope-head {
+    align-items: flex-start;
+  }
+
+  .nova-chat-knowledge-toggle {
+    min-width: 104px;
+  }
+
+  .nova-chat-knowledge-vault-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nova-chat-knowledge-clear {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .nova-chat-knowledge-scope-head {
+    gap: 8px;
+    padding: 7px;
+  }
+
+  .nova-chat-knowledge-scope-label strong {
+    font-size: 7px;
+  }
+
+  .nova-chat-knowledge-toggle {
+    min-width: 0;
+    padding: 0 7px;
+    font-size: 6px;
+  }
+
+  .nova-chat-knowledge-panel {
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-chat-knowledge-toggle,
+  .nova-chat-knowledge-file {
+    transition: none;
   }
 }

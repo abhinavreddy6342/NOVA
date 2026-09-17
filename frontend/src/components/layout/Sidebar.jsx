@@ -102,6 +102,7 @@ export default function Sidebar({
 
         <div>
           <div className="brand-title">NOVA</div>
+
           <div className="brand-caption">
             SOVEREIGN AI
           </div>
@@ -114,6 +115,7 @@ export default function Sidebar({
           onNewConversation();
           onNavigate("chat");
         }}
+        type="button"
       >
         <span className="new-conversation-icon">
           <Plus size={16} />
@@ -129,7 +131,9 @@ export default function Sidebar({
 
         {workspaceItems.map((item) => {
           const Icon = item.icon;
-          const active = activePage === item.id;
+
+          const active =
+            activePage === item.id;
 
           return (
             <button
@@ -140,6 +144,7 @@ export default function Sidebar({
               onClick={() =>
                 onNavigate(item.id)
               }
+              type="button"
             >
               <Icon
                 size={17}
@@ -170,14 +175,22 @@ export default function Sidebar({
             recentConversations.map(
               (conversation) => {
                 const active =
-                  activeConversationId ===
-                  conversation.id;
+                  String(
+                    activeConversationId
+                  ) ===
+                  String(
+                    conversation.id
+                  );
 
                 return (
                   <div
-                    key={conversation.id}
+                    key={
+                      conversation.id
+                    }
                     className={`recent-chat-row ${
-                      active ? "active" : ""
+                      active
+                        ? "active"
+                        : ""
                     }`}
                   >
                     <button
@@ -187,7 +200,10 @@ export default function Sidebar({
                         onSelectConversation(
                           conversation.id
                         );
-                        onNavigate("chat");
+
+                        onNavigate(
+                          "chat"
+                        );
                       }}
                     >
                       <span className="recent-chat-title">
@@ -217,7 +233,10 @@ export default function Sidebar({
                           conversation.id
                         );
                       }}
-                      aria-label={`Delete ${conversation.title}`}
+                      aria-label={`Delete ${
+                        conversation.title ||
+                        "conversation"
+                      }`}
                       title="Delete conversation"
                     >
                       <Trash2 size={12} />
@@ -237,7 +256,9 @@ export default function Sidebar({
 
         {systemItems.map((item) => {
           const Icon = item.icon;
-          const active = activePage === item.id;
+
+          const active =
+            activePage === item.id;
 
           return (
             <button
@@ -248,6 +269,7 @@ export default function Sidebar({
               onClick={() =>
                 onNavigate(item.id)
               }
+              type="button"
             >
               <Icon
                 size={17}
@@ -272,12 +294,13 @@ export default function Sidebar({
           </div>
 
           <div className="runtime-model">
-            Llama 3.2
+            SOVEREIGN WORKSPACE
           </div>
 
           <div className="runtime-info">
-            <span>20% CPU</span>
-            <span>80% GPU</span>
+            <span>
+              LIVE DATA SHOWN IN MODULES
+            </span>
           </div>
 
           <div className="runtime-progress">
@@ -285,7 +308,13 @@ export default function Sidebar({
           </div>
         </div>
 
-        <button className="sidebar-item">
+        <button
+          className="sidebar-item"
+          type="button"
+          onClick={() =>
+            onNavigate("sovereignty")
+          }
+        >
           <Settings
             size={17}
             strokeWidth={1.8}

@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+from PIL import Image
+import pytesseract
 
 from app.agents.tools.handlers import (
     code_executor_handler,
@@ -15,6 +18,7 @@ from app.agents.tools.handlers import (
     spreadsheet_reader_handler,
     spreadsheet_writer_handler,
     visualization_writer_handler,
+    _resolve_workspace_file,
 )
 
 
@@ -60,6 +64,11 @@ class ToolRegistry:
         if not tool.name.strip():
             raise ValueError(
                 "Tool name cannot be empty."
+            )
+
+        if tool.handler is None:
+            raise ValueError(
+                f"Tool '{tool.name}' must have a handler."
             )
 
         self._tools[tool.name] = tool
@@ -165,6 +174,122 @@ class ToolRegistry:
 
 
 # ---------------------------------------------------------------------------
+# LOCAL OCR HANDLER
+# ---------------------------------------------------------------------------
+
+def ocr_handler(
+    file_path: str,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """
+    Extract readable text from a local image using Tesseract OCR.
+
+    Supported image files:
+    - PNG
+    - JPG
+    - JPEG
+    - WEBP
+
+    No external service is contacted.
+    """
+
+    if not file_path or not str(file_path).strip():
+        raise ValueError(
+            "ocr requires a file_path."
+        )
+
+    path = _resolve_workspace_file(
+        file_path
+    )
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Image not found: {file_path}"
+        )
+
+    if not path.is_file():
+        raise ValueError(
+            "The specified OCR path is not a file."
+        )
+
+    extension = path.suffix.lower()
+
+    allowed_image_extensions = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+    }
+
+    if extension not in allowed_image_extensions:
+        raise ValueError(
+            "Unsupported OCR image type: "
+            f"{extension or '[no extension]'}. "
+        )
+
+    file_size = path.stat().st_size
+
+    if file_size > 5 * 1024 * 1024:
+        raise ValueError(
+            "Image is too large for OCR. Maximum allowed size is 5 MB."
+        )
+
+    try:
+
+        with Image.open(path) as image:
+
+            image = image.convert(
+                "RGB"
+            )
+
+            text = pytesseract.image_to_string(
+                image,
+                config="--psm 6",
+            )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            f"Local OCR failed: {exc}"
+        ) from exc
+
+    text = str(
+        text or ""
+    ).strip()
+
+    # Return paths in NOVA's canonical workspace-relative format:
+    # input/<file>, output/<file>, or temp/<file>
+    # rather than backend/workspace/<file>.
+    try:
+        workspace_root = path.parents[1]
+        relative_path = (
+            path.relative_to(
+                workspace_root
+            )
+        )
+    except ValueError:
+        relative_path = path.name
+
+    return {
+        "file_path": str(
+            relative_path
+        ).replace(
+            "\\",
+            "/",
+        ),
+        "file_name": path.name,
+        "extension": extension,
+        "file_type": "image",
+        "content": text,
+        "text": text,
+        "characters": len(text),
+        "readable": bool(text),
+        "workspace": "NOVA",
+        "tool": "ocr",
+    }
+
+
+# ---------------------------------------------------------------------------
 # NOVA TOOL REGISTRY
 # ---------------------------------------------------------------------------
 
@@ -188,6 +313,27 @@ tool_registry.register(
             "file_path": "string",
         },
         handler=document_reader_handler,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# OCR
+# ---------------------------------------------------------------------------
+
+tool_registry.register(
+    ToolDefinition(
+        name="ocr",
+        description=(
+            "Extract readable text from local PNG, JPG, JPEG or WEBP "
+            "images using on-premise Tesseract OCR."
+        ),
+        category="multimodal",
+        requires_confirmation=False,
+        input_schema={
+            "file_path": "string",
+        },
+        handler=ocr_handler,
     )
 )
 

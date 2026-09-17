@@ -1,13 +1,18 @@
 from pathlib import Path
 import json
 import shutil
+import re
+import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.agents.execution.executor import AgentExecutor
+from app.agents.execution.executor import (
+    AgentExecutor,
+    set_mission_cancelled,
+)
 from app.agents.planner.planner import agent_planner
 from app.agents.response.synthesizer import (
     agent_response_synthesizer,
@@ -19,12 +24,6 @@ from app.services.chat_history import (
     add_message,
     create_conversation,
     get_conversation,
-)
-from app.services.model_engine.model_router import (
-    route_request,
-)
-from app.services.model_engine.ollama_manager import (
-    ollama_manager,
 )
 
 
@@ -123,7 +122,9 @@ class AgentRunResponse(BaseModel):
 
     artifacts: List[
         Dict[str, Any]
-    ] = []
+    ] = Field(
+        default_factory=list
+    )
 
 
 class MissionRunResponse(BaseModel):
@@ -143,7 +144,9 @@ class MissionRunResponse(BaseModel):
 
     artifacts: List[
         Dict[str, Any]
-    ] = []
+    ] = Field(
+        default_factory=list
+    )
 
     sovereignty: Dict[str, Any]
 
@@ -163,6 +166,7 @@ ALLOWED_ATTACHMENT_EXTENSIONS = {
     ".png",
     ".jpg",
     ".jpeg",
+    ".webp",
 }
 
 
@@ -175,6 +179,9 @@ def _get_context_attachments(
 ]:
     """
     Extract normalized uploaded-file references from agent context.
+
+    These are normal chat-upload references. Knowledge Vault
+    selections are handled separately below.
     """
 
     if not context:
@@ -231,10 +238,103 @@ def _get_context_attachments(
                 "file_id": file_id,
                 "filename": filename,
                 "content_type": content_type,
+                "source_type": "chat",
             }
         )
 
     return normalized
+
+
+def _get_context_vault_file_ids(
+    context: Optional[
+        Dict[str, Any]
+    ],
+) -> List[str]:
+    """
+    Read explicitly selected Knowledge Vault file IDs.
+
+    Supported context keys:
+    - vault_file_ids
+    - knowledge_file_ids
+    - selected_file_ids
+    """
+
+    if not context:
+        return []
+
+    candidate_keys = (
+        "vault_file_ids",
+        "knowledge_file_ids",
+        "selected_file_ids",
+    )
+
+    combined: List[str] = []
+
+    for key in candidate_keys:
+        value = context.get(
+            key,
+            [],
+        )
+
+        if isinstance(
+            value,
+            str,
+        ):
+            value = [
+                value
+            ]
+
+        if not isinstance(
+            value,
+            list,
+        ):
+            continue
+
+        combined.extend(
+            value
+        )
+
+    return list(
+        dict.fromkeys(
+            str(
+                file_id
+            ).strip()
+            for file_id in combined
+            if str(
+                file_id
+            ).strip()
+        )
+    )
+
+
+def _get_context_vault_id(
+    context: Optional[
+        Dict[str, Any]
+    ],
+) -> Optional[str]:
+    """
+    Return the selected Knowledge Vault ID when supplied.
+    """
+
+    if not context:
+        return None
+
+    for key in (
+        "vault_id",
+        "knowledge_vault_id",
+        "selected_vault_id",
+    ):
+        value = str(
+            context.get(
+                key,
+                "",
+            )
+        ).strip()
+
+        if value:
+            return value
+
+    return None
 
 
 def _resolve_chat_upload_path(
@@ -271,7 +371,9 @@ def _resolve_chat_upload_path(
 
     source_path = (
         CHAT_UPLOADS_DIR
-        / Path(stored_name).name
+        / Path(
+            stored_name
+        ).name
     ).resolve()
 
     try:
@@ -297,14 +399,256 @@ def _resolve_chat_upload_path(
     return source_path
 
 
+def _resolve_vault_file(
+    file_id: str,
+    vault_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Resolve one real active Knowledge Vault file.
+
+    The file registry is authoritative.
+    Chroma is never used to resolve filesystem state.
+    """
+
+    from app.services.vault_manager import (
+        get_file,
+        resolve_file_path,
+    )
+
+    normalized_file_id = str(
+        file_id or ""
+    ).strip()
+
+    if not normalized_file_id:
+        raise ValueError(
+            "Knowledge Vault file ID is required."
+        )
+
+    metadata = get_file(
+        normalized_file_id
+    )
+
+    status = str(
+        metadata.get(
+            "status",
+            "",
+        )
+    ).strip().lower()
+
+    if status != "active":
+        raise FileNotFoundError(
+            f"Knowledge Vault file is not active: {normalized_file_id}"
+        )
+
+    registered_vault_id = str(
+        metadata.get(
+            "vault_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if not registered_vault_id:
+        raise ValueError(
+            f"Knowledge Vault file is not assigned to a vault: {normalized_file_id}"
+        )
+
+    normalized_vault_id = str(
+        vault_id or ""
+    ).strip()
+
+    if (
+        normalized_vault_id
+        and registered_vault_id
+        != normalized_vault_id
+    ):
+        raise PermissionError(
+            f"File {normalized_file_id} does not belong to "
+            f"selected vault {normalized_vault_id}."
+        )
+
+    source_path = resolve_file_path(
+        normalized_file_id
+    )
+
+    vault_name = str(
+        metadata.get(
+            "vault_name",
+            "",
+        )
+    ).strip()
+
+    if not vault_name:
+        try:
+            from app.services.vault_manager import (
+                list_vaults,
+            )
+
+            for vault in list_vaults():
+                if str(
+                    vault.get(
+                        "vault_id",
+                        "",
+                    )
+                ).strip() == registered_vault_id:
+                    vault_name = str(
+                        vault.get(
+                            "name",
+                            "",
+                        )
+                    ).strip()
+                    break
+        except Exception:
+            vault_name = ""
+
+    return {
+        "file_id": normalized_file_id,
+        "filename": metadata.get(
+            "filename",
+            source_path.name,
+        ),
+        "content_type": metadata.get(
+            "content_type",
+            "",
+        ),
+        "vault_id": registered_vault_id,
+        "vault_name": vault_name,
+        "stored_name": metadata.get(
+            "stored_name",
+            "",
+        ),
+        "source_path": source_path,
+        "registry": metadata,
+    }
+
+
+def _get_context_source_references(
+    context: Optional[
+        Dict[str, Any]
+    ],
+) -> List[
+    Dict[str, Any]
+]:
+    """
+    Return real file references attached to an agent request.
+
+    This combines:
+    - normal Local Chat uploads
+    - explicit Knowledge Vault selections
+
+    Duplicate file IDs are emitted only once.
+    """
+
+    references: List[
+        Dict[str, Any]
+    ] = []
+
+    seen_ids = set()
+
+    for attachment in _get_context_attachments(
+        context
+    ):
+        file_id = str(
+            attachment.get(
+                "file_id",
+                "",
+            )
+        ).strip()
+
+        if not file_id:
+            continue
+
+        if file_id in seen_ids:
+            continue
+
+        seen_ids.add(
+            file_id
+        )
+
+        references.append(
+            dict(
+                attachment
+            )
+        )
+
+    vault_id = _get_context_vault_id(
+        context
+    )
+
+    for file_id in _get_context_vault_file_ids(
+        context
+    ):
+        normalized_file_id = str(
+            file_id or ""
+        ).strip()
+
+        if not normalized_file_id:
+            continue
+
+        if normalized_file_id in seen_ids:
+            continue
+
+        try:
+            vault_file = _resolve_vault_file(
+                file_id=normalized_file_id,
+                vault_id=vault_id,
+            )
+
+            references.append(
+                {
+                    "file_id": normalized_file_id,
+                    "filename": str(
+                        vault_file.get(
+                            "filename",
+                            "Unknown file",
+                        )
+                    ),
+                    "content_type": str(
+                        vault_file.get(
+                            "content_type",
+                            "",
+                        )
+                    ),
+                    "source_type": "knowledge-vault",
+                    "vault_id": vault_file.get(
+                        "vault_id"
+                    ),
+                    "vault_name": vault_file.get(
+                        "vault_name",
+                        "",
+                    ),
+                }
+            )
+
+            seen_ids.add(
+                normalized_file_id
+            )
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Selected Knowledge Vault file "
+                    f"is unavailable: {normalized_file_id}. "
+                    f"{exc}"
+                ),
+            ) from exc
+
+    return references
+
+
+# ---------------------------------------------------------------------------
+# STAGE SOURCE ATTACHMENT
+# ---------------------------------------------------------------------------
+
 def _stage_attachment(
     attachment: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Stage one uploaded file into workspace/input.
+    Stage one real source file into workspace/input.
 
-    The staged file is a temporary SOURCE INPUT.
-    It is never treated as an artifact.
+    The staged file is a temporary execution input.
+    It is never treated as a generated artifact.
     """
 
     file_id = str(
@@ -319,9 +663,92 @@ def _stage_attachment(
             "Attachment is missing file_id."
         )
 
-    source_path = _resolve_chat_upload_path(
-        file_id
-    )
+    source_type = str(
+        attachment.get(
+            "source_type",
+            "chat",
+        )
+    ).strip().lower()
+
+    source_path: Path
+    original_filename: str
+    content_type: str
+    resolved_vault_id: Optional[str] = None
+    resolved_vault_name = ""
+
+    if source_type == "knowledge-vault":
+        vault_id = str(
+            attachment.get(
+                "vault_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        vault_file = _resolve_vault_file(
+            file_id=file_id,
+            vault_id=(
+                vault_id
+                or None
+            ),
+        )
+
+        source_path = Path(
+            vault_file[
+                "source_path"
+            ]
+        )
+
+        original_filename = str(
+            vault_file.get(
+                "filename",
+                source_path.name,
+            )
+        ).strip()
+
+        content_type = str(
+            vault_file.get(
+                "content_type",
+                attachment.get(
+                    "content_type",
+                    "",
+                ),
+            )
+        ).strip()
+
+        resolved_vault_id = str(
+            vault_file.get(
+                "vault_id",
+                "",
+            )
+            or ""
+        ).strip() or None
+
+        resolved_vault_name = str(
+            vault_file.get(
+                "vault_name",
+                "",
+            )
+        ).strip()
+
+    else:
+        source_path = _resolve_chat_upload_path(
+            file_id
+        )
+
+        original_filename = str(
+            attachment.get(
+                "filename"
+            )
+            or source_path.name
+        ).strip()
+
+        content_type = str(
+            attachment.get(
+                "content_type",
+                "",
+            )
+        ).strip()
 
     extension = (
         source_path.suffix.lower()
@@ -333,18 +760,11 @@ def _stage_attachment(
         raise ValueError(
             f"Unsupported attachment extension: {extension}. "
             "Supported formats are CSV, XLSX, PDF, DOCX, TXT, "
-            "MD, JSON, PNG and JPEG."
+            "MD, JSON, PNG, JPEG and WEBP."
         )
-
-    original_filename = (
-        attachment.get(
-            "filename"
-        )
-        or source_path.name
-    )
 
     original_filename = Path(
-        str(original_filename)
+        original_filename
     ).name
 
     if not original_filename:
@@ -390,12 +810,10 @@ def _stage_attachment(
     return {
         "file_id": file_id,
         "original_filename": original_filename,
-        "content_type": str(
-            attachment.get(
-                "content_type",
-                "",
-            )
-        ),
+        "content_type": content_type,
+        "source_type": source_type,
+        "vault_id": resolved_vault_id,
+        "vault_name": resolved_vault_name,
         "workspace_file_path": str(
             destination_path.relative_to(
                 WORKSPACE_ROOT
@@ -420,7 +838,7 @@ def _is_evidence_review_request(
 ) -> bool:
     """
     Detect missions where the user wants NOVA to understand and explain
-    the supplied evidence rather than create a deliverable.
+    the supplied evidence.
     """
 
     text = " ".join(
@@ -430,75 +848,193 @@ def _is_evidence_review_request(
     )
 
     review_terms = (
-        "check the files", "check every file", "check all files", "check every attached file",
-        "check all attached files", "check these files", "check the attached files",
-        "check the provided files", "check uploaded files", "check each file", "check the file",
-        "read every file", "read all files", "read every attached file", "read all attached files",
-        "read these files", "read uploaded files", "read each file", "read the file", "read the files",
-        "review the files", "review every file", "review all files", "review every attached file",
-        "review all attached files", "review the attached files", "review the provided files",
-        "review uploaded files", "review each file", "review the evidence", "review all the evidence", "review the file",
-        "inspect every file", "inspect all files", "inspect every attached file",
-        "inspect all attached files", "inspect the attached files", "inspect each file", "inspect the file", "inspect the files",
-        "analyze every file", "analyse every file", "analyze all files", "analyse all files",
-        "analyze every attached file", "analyse every attached file", "analyze all attached files",
-        "analyse all attached files", "analyze the attached files", "analyse the attached files",
-        "analyze the provided files", "analyse the provided files", "analyze each file", "analyse each file",
-        "analyze the file", "analyse the file", "analyze the files", "analyse the files",
-        "tell me what each file", "tell me what every file", "tell me what each uploaded file",
-        "tell me what each attached file", "tell me what each file contains",
-        "tell me what every file contains", "tell me what each file is about",
-        "tell me what every file is about", "tell me what these files contain",
-        "tell me what these files are about", "tell me what each uploaded file contains",
-        "tell me what each uploaded file is about", "tell me what each attached file contains",
-        "tell me what this file contains", "tell me what this spreadsheet contains", "tell me what this document contains",
-        "what each file contains", "what every file contains", "what each file is about",
-        "what every file is about", "what does each file contain", "what does every file contain",
-        "what are these files about", "what do these files contain", "what each uploaded file contains",
-        "what this file contains", "what this spreadsheet contains",
-        "explain each file", "explain every file", "explain these files", "explain all files", "explain the file", "explain the files",
-        "summarize each file", "summarise each file", "summarize every file", "summarise every file",
-        "summarize these files", "summarise these files", "summarize all files", "summarise all files", "summarize the file", "summarise the file",
-        "summarize each one", "summarise each one", "explain each one", "explain the contents", "explain what each file contains",
-        "understand the files", "understand every file", "understand these files",
-        "look through the files", "go through the files",
+        "check the files",
+        "check every file",
+        "check all files",
+        "check every attached file",
+        "check all attached files",
+        "check these files",
+        "check the attached files",
+        "check the provided files",
+        "check uploaded files",
+        "check each file",
+        "check the file",
+        "read every file",
+        "read all files",
+        "read every attached file",
+        "read all attached files",
+        "read these files",
+        "read uploaded files",
+        "read each file",
+        "read the file",
+        "read the files",
+        "review the files",
+        "review every file",
+        "review all files",
+        "review every attached file",
+        "review all attached files",
+        "review the attached files",
+        "review the provided files",
+        "review uploaded files",
+        "review each file",
+        "review the evidence",
+        "review all the evidence",
+        "review the file",
+        "inspect every file",
+        "inspect all files",
+        "inspect every attached file",
+        "inspect all attached files",
+        "inspect the attached files",
+        "inspect each file",
+        "inspect the file",
+        "inspect the files",
+        "analyze every file",
+        "analyse every file",
+        "analyze all files",
+        "analyse all files",
+        "analyze every attached file",
+        "analyse every attached file",
+        "analyze all attached files",
+        "analyse all attached files",
+        "analyze the attached files",
+        "analyse the attached files",
+        "analyze the provided files",
+        "analyse the provided files",
+        "analyze each file",
+        "analyse each file",
+        "analyze the file",
+        "analyse the file",
+        "analyze the files",
+        "analyse the files",
+        "tell me what each file",
+        "tell me what every file",
+        "tell me what each uploaded file",
+        "tell me what each attached file",
+        "tell me what each file contains",
+        "tell me what every file contains",
+        "tell me what each file is about",
+        "tell me what every file is about",
+        "tell me what these files contain",
+        "tell me what these files are about",
+        "tell me what each uploaded file contains",
+        "tell me what each uploaded file is about",
+        "tell me what each attached file contains",
+        "tell me what this file contains",
+        "tell me what this spreadsheet contains",
+        "tell me what this document contains",
+        "what each file contains",
+        "what every file contains",
+        "what each file is about",
+        "what every file is about",
+        "what are these files about",
+        "what do these files contain",
+        "what each uploaded file contains",
+        "what this file contains",
+        "what this spreadsheet contains",
+        "explain each file",
+        "explain every file",
+        "explain these files",
+        "explain all files",
+        "explain the file",
+        "explain the files",
+        "summarize each file",
+        "summarise each file",
+        "summarize every file",
+        "summarise every file",
+        "summarize these files",
+        "summarise these files",
+        "summarize all files",
+        "summarise all files",
+        "summarize the file",
+        "summarise the file",
+        "summarize each one",
+        "summarise each one",
+        "explain each one",
+        "explain the contents",
+        "explain what each file contains",
+        "understand the files",
+        "understand every file",
+        "understand these files",
+        "look through the files",
+        "go through the files",
     )
 
-    if any(term in text for term in review_terms):
+    if any(
+        term in text
+        for term in review_terms
+    ):
         return True
 
-    action_words = ("check", "review", "read", "analyze", "analyse", "inspect", "explain", "summarize", "summarise", "understand", "tell")
-    file_words = ("file", "files", "attachment", "attachments", "upload", "uploads", "evidence", "spreadsheet", "document")
-    has_action = any(act in text for act in action_words)
-    has_file = any(f in text for f in file_words)
-    has_scope = any(sc in text for sc in ("each", "every", "all", "these", "this", "attached", "uploaded", "provided", "supplied"))
+    action_words = (
+        "check",
+        "review",
+        "read",
+        "analyze",
+        "analyse",
+        "inspect",
+        "explain",
+        "summarize",
+        "summarise",
+        "understand",
+        "tell",
+    )
 
-    return bool(has_action and has_file and has_scope)
+    file_words = (
+        "file",
+        "files",
+        "attachment",
+        "attachments",
+        "upload",
+        "uploads",
+        "evidence",
+        "spreadsheet",
+        "document",
+    )
+
+    has_action = any(
+        act in text
+        for act in action_words
+    )
+
+    has_file = any(
+        f in text
+        for f in file_words
+    )
+
+    has_scope = any(
+        sc in text
+        for sc in (
+            "each",
+            "every",
+            "all",
+            "these",
+            "this",
+            "attached",
+            "uploaded",
+            "provided",
+            "supplied",
+        )
+    )
+
+    return bool(
+        has_action
+        and has_file
+        and has_scope
+    )
 
 
 def _is_evidence_review_report_request(
     objective: str,
 ) -> bool:
     """
-    Detect if user wants both evidence review AND a generated report file.
+    Detect an evidence review request.
+
+    Mission Control controls whether a DOCX report is mandatory.
     """
-    if not _is_evidence_review_request(objective):
-        return False
 
-    text = str(objective or "").lower()
-
-    if "do not create any files" in text or "don't create any files" in text or "no files" in text:
-        return False
-
-    report_terms = (
-        "create a pdf", "generate a pdf", "make a pdf", "write a pdf", "pdf report",
-        "create a docx", "generate a docx", "make a docx", "write a docx", "word document", "word report",
-        "create a report", "generate a report", "make a report", "write a report", "report file",
-        "create a document", "generate a document", "make a document", "write a document",
-        "create an excel", "generate an excel", "excel report", "create a powerpoint", "pptx"
+    return _is_evidence_review_request(
+        objective
     )
-
-    return any(term in text for term in report_terms)
 
 
 # ---------------------------------------------------------------------------
@@ -519,13 +1055,11 @@ def _prepare_agent_context(
     """
     Prepare a complete sovereign runtime context.
 
-    Original uploaded-file references are preserved under
-    mission_attachments.
-
-    Temporary staged paths are exposed under staged_files.
-
-    Mission conversation history is converted into text so
-    the planner can reason over previous mission turns.
+    Supports:
+    - direct Local Chat uploads
+    - Knowledge Vault file selections
+    - selected vault scope
+    - mission evidence
     """
 
     prepared_context: Dict[
@@ -535,33 +1069,57 @@ def _prepare_agent_context(
         context or {}
     )
 
-    attachments = _get_context_attachments(
+    source_references = (
+        _get_context_source_references(
+            context
+        )
+    )
+
+    prepared_context[
+        "source_references"
+    ] = source_references
+
+    prepared_context[
+        "selected_vault_id"
+    ] = _get_context_vault_id(
         context
     )
 
     prepared_context[
+        "selected_vault_file_ids"
+    ] = _get_context_vault_file_ids(
+        context
+    )
+
+    chat_attachments = (
+        _get_context_attachments(
+            context
+        )
+    )
+
+    prepared_context[
         "mission_attachments"
-    ] = attachments
+    ] = source_references
 
     staged_attachments: List[
         Dict[str, Any]
     ] = []
 
-    if attachments:
-        try:
-            for attachment in attachments:
-                staged = _stage_attachment(
-                    attachment
-                )
-
-                staged_attachments.append(
-                    staged
-                )
-        except Exception:
-            _cleanup_staged_files(
-                staged_attachments
+    try:
+        for attachment in source_references:
+            staged = _stage_attachment(
+                attachment
             )
-            raise
+
+            staged_attachments.append(
+                staged
+            )
+
+    except Exception:
+        _cleanup_staged_files(
+            staged_attachments
+        )
+        raise
 
     staged_paths = [
         item[
@@ -603,6 +1161,7 @@ def _prepare_agent_context(
                 ".png",
                 ".jpg",
                 ".jpeg",
+                ".webp",
             )
         )
     ]
@@ -610,6 +1169,10 @@ def _prepare_agent_context(
     prepared_context[
         "attachments"
     ] = staged_attachments
+
+    prepared_context[
+        "chat_attachments"
+    ] = chat_attachments
 
     prepared_context[
         "staged_files"
@@ -634,9 +1197,25 @@ def _prepare_agent_context(
     )
 
     prepared_context[
+        "mission_control"
+    ] = bool(
+        prepared_context.get(
+            "mission_control",
+            False,
+        )
+    )
+
+    prepared_context[
         "evidence_review_report"
-    ] = _is_evidence_review_report_request(
-        objective
+    ] = bool(
+        prepared_context.get(
+            "mission_control",
+            False,
+        )
+        and prepared_context.get(
+            "evidence_review",
+            False,
+        )
     )
 
     # -----------------------------------------------------------------------
@@ -717,7 +1296,34 @@ def _prepare_agent_context(
             "- Do not infer a file's contents from its filename.\n"
             "- Do not invent missing measurements, records, observations or facts.\n"
             "- Do not overwrite or modify source files.\n"
-            "- Do not create an artifact unless the user explicitly asks for one.\n"
+        )
+
+    selected_vault_id = (
+        prepared_context.get(
+            "selected_vault_id"
+        )
+    )
+
+    selected_vault_file_ids = (
+        prepared_context.get(
+            "selected_vault_file_ids",
+            [],
+        )
+    )
+
+    if (
+        selected_vault_id
+        or selected_vault_file_ids
+    ):
+        attachment_instruction += (
+            "\n\nKNOWLEDGE VAULT SOURCE SCOPE:\n"
+            f"- Selected vault: "
+            f"{selected_vault_id or 'ALL SELECTED VAULT SOURCES'}\n"
+            f"- Selected file count: "
+            f"{len(selected_vault_file_ids)}\n"
+            "- The selected Knowledge Vault files are real registry files.\n"
+            "- Treat their actual contents as authoritative source material.\n"
+            "- Do not substitute unrelated files from other vaults.\n"
         )
 
     if prepared_context.get(
@@ -729,11 +1335,19 @@ def _prepare_agent_context(
             "You MUST inspect every supplied source file.\n"
             "There must be one reading step for every supplied source file.\n"
             "After all files are read, synthesize a conversational answer.\n"
-            "Do NOT create a PDF, DOCX, PPTX, XLSX, CSV, chart, or other artifact "
-            "unless the user explicitly requests that artifact.\n"
-            "The final response must explain what each file is about and what it contains.\n"
-            "Do not report file size, storage path, verification status, or output location "
-            "unless the user explicitly asks for those details.\n"
+            "\n"
+            "MISSION CONTROL DELIVERABLE RULE:\n"
+            "When this workflow is running from Mission Control, "
+            "a DOCX review report is mandatory after all supplied files "
+            "have been successfully read.\n"
+            "The DOCX must be based only on actual completed reader results.\n"
+            "The DOCX must be created inside the NOVA workspace output directory.\n"
+            "The report-generation step must occur after all source-reading steps.\n"
+            "The report must not modify the source input files.\n"
+            "The final conversational response must still explain what each "
+            "file is about and what it contains.\n"
+            "Do not expose internal storage paths or execution metadata "
+            "in the conversational answer.\n"
         )
 
     # -----------------------------------------------------------------------
@@ -1066,7 +1680,6 @@ def _extract_result_text(
     """
     Extract useful readable content from common reader result structures.
 
-    IMPORTANT:
     Spreadsheet reader output is structured under sheets/headers/rows,
     so it is explicitly converted into a readable evidence representation.
     """
@@ -1107,10 +1720,6 @@ def _extract_result_text(
         return str(
             result
         ).strip()
-
-    # -----------------------------------------------------------------------
-    # SPREADSHEET STRUCTURE
-    # -----------------------------------------------------------------------
 
     if isinstance(
         result.get(
@@ -1278,10 +1887,6 @@ def _extract_result_text(
             spreadsheet_lines
         ).strip()
 
-    # -----------------------------------------------------------------------
-    # COMMON TEXT FIELDS
-    # -----------------------------------------------------------------------
-
     preferred_keys = (
         "text",
         "content",
@@ -1302,10 +1907,6 @@ def _extract_result_text(
             str,
         ) and value.strip():
             return value.strip()
-
-    # -----------------------------------------------------------------------
-    # NESTED STRUCTURES
-    # -----------------------------------------------------------------------
 
     nested_keys = (
         "data",
@@ -1329,10 +1930,6 @@ def _extract_result_text(
 
         if nested_text:
             return nested_text
-
-    # -----------------------------------------------------------------------
-    # LAST-RESORT STRUCTURED PREVIEW
-    # -----------------------------------------------------------------------
 
     useful = {
         key: value
@@ -1359,67 +1956,330 @@ def _summarize_source_code_file(
     file_name: str,
     text: str,
 ) -> str:
-    ext = Path(file_name).suffix.lower()
-    lines = [line for line in text.splitlines() if line.strip()]
+    ext = Path(
+        file_name
+    ).suffix.lower()
+
+    lines = [
+        line
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
     total_lines = len(lines)
 
     if ext == ".css":
-        selectors = re.findall(r"([\.#a-zA-Z0-9_\-\s,]+)\s*\{", text)
-        clean_sel = [s.strip() for s in selectors if s.strip() and not s.strip().startswith("@")][:12]
-        sel_text = f"Key selectors/components: {', '.join(clean_sel)}" if clean_sel else ""
+        selectors = re.findall(
+            r"([.#a-zA-Z0-9_\-\s,]+)\s*\{",
+            text,
+        )
+
+        clean_sel = [
+            s.strip()
+            for s in selectors
+            if s.strip()
+            and not s.strip().startswith("@")
+        ][:12]
+
+        sel_text = (
+            f"Key selectors/components: {', '.join(clean_sel)}"
+            if clean_sel
+            else ""
+        )
+
         return (
-            f"File: {file_name} (Frontend CSS Stylesheet, {total_lines} lines)\n"
-            f"Purpose: Defines UI styling, dark theme, layout structure, typography, colors, panels, buttons, and animations.\n"
+            f"File: {file_name} "
+            f"(Frontend CSS Stylesheet, {total_lines} lines)\n"
+            "Purpose: Defines UI styling, dark theme, layout structure, "
+            "typography, colors, panels, buttons, and animations.\n"
             f"{sel_text}\n"
-            f"Summary: Contains styling declarations covering visual layout and responsive UI design."
+            "Summary: Contains styling declarations covering visual layout "
+            "and responsive UI design."
         )
 
     if ext == ".json":
         try:
-            parsed = json.loads(text)
-            if isinstance(parsed, dict):
-                keys = list(parsed.keys())
+            parsed = json.loads(
+                text
+            )
+
+            if isinstance(
+                parsed,
+                dict,
+            ):
+                keys = list(
+                    parsed.keys()
+                )
+
                 return (
-                    f"File: {file_name} (JSON Data/Configuration, {total_lines} lines)\n"
-                    f"Purpose: Structured JSON data containing key fields: {', '.join(keys[:15])}.\n"
+                    f"File: {file_name} "
+                    f"(JSON Data/Configuration, {total_lines} lines)\n"
+                    "Purpose: Structured JSON data containing key fields: "
+                    f"{', '.join(keys[:15])}.\n"
                     f"Key fields count: {len(keys)}"
                 )
-            elif isinstance(parsed, list):
+
+            if isinstance(
+                parsed,
+                list,
+            ):
                 return (
-                    f"File: {file_name} (JSON Array, {len(parsed)} items, {total_lines} lines)\n"
-                    f"Sample record: {json.dumps(parsed[0]) if parsed else '[]'}"
+                    f"File: {file_name} "
+                    f"(JSON Array, {len(parsed)} items, {total_lines} lines)\n"
+                    "Sample record: "
+                    f"{json.dumps(parsed[0]) if parsed else '[]'}"
                 )
+
         except Exception:
             pass
-        return f"File: {file_name} (JSON data, {total_lines} lines)\nContent preview: {text[:500]}"
 
-    if ext in {".py", ".js", ".ts", ".jsx", ".tsx"}:
-        symbols = re.findall(r"(?:def|function|const|class)\s+([a-zA-Z0-9_]+)", text)
-        clean_symbols = sorted(list(set(symbols)))[:12]
-        sym_text = f"Declared functions/classes: {', '.join(clean_symbols)}" if clean_symbols else "Main script execution"
         return (
-            f"File: {file_name} ({ext.lstrip('.').upper()} Source Module, {total_lines} lines)\n"
-            f"Purpose: Program source code implementing application logic.\n"
+            f"File: {file_name} "
+            f"(JSON data, {total_lines} lines)\n"
+            f"Content preview: {text[:500]}"
+        )
+
+    if ext in {
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+    }:
+        symbols = re.findall(
+            r"(?:def|function|const|class)\s+([a-zA-Z0-9_]+)",
+            text,
+        )
+
+        clean_symbols = sorted(
+            list(
+                set(
+                    symbols
+                )
+            )
+        )[:12]
+
+        sym_text = (
+            "Declared functions/classes: "
+            f"{', '.join(clean_symbols)}"
+            if clean_symbols
+            else "Main script execution"
+        )
+
+        return (
+            f"File: {file_name} "
+            f"({ext.lstrip('.').upper()} Source Module, {total_lines} lines)\n"
+            "Purpose: Program source code implementing application logic.\n"
             f"{sym_text}"
         )
 
     if ext == ".md":
-        headings = re.findall(r"^\s*#{1,6}\s+(.+)$", text, flags=re.MULTILINE)
-        h_text = f"Major sections: {', '.join(h.strip() for h in headings[:10])}" if headings else ""
+        headings = re.findall(
+            r"^\s*#{1,6}\s+(.+)$",
+            text,
+            flags=re.MULTILINE,
+        )
+
+        h_text = (
+            "Major sections: "
+            + ", ".join(
+                h.strip()
+                for h in headings[:10]
+            )
+            if headings
+            else ""
+        )
+
         return (
-            f"File: {file_name} (Markdown Document, {total_lines} lines)\n"
+            f"File: {file_name} "
+            f"(Markdown Document, {total_lines} lines)\n"
             f"{h_text}\n"
             f"Summary: {text[:600]}"
         )
 
+    if ext == ".txt":
+        non_empty = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+        ]
+
+        css_like = (
+            ":root" in text
+            or (
+                "{" in text
+                and "}" in text
+                and "--" in text
+            )
+        )
+
+        json_like = text.lstrip().startswith(
+            (
+                "{",
+                "[",
+            )
+        )
+
+        code_like = bool(
+            re.search(
+                r"\b(?:def|class|function|import|from|const|let|var|return)\b",
+                text
+            )
+        )
+
+        if css_like:
+            selectors = re.findall(
+                r"([.#a-zA-Z0-9_\-\s,]+)\s*\{",
+                text,
+            )
+
+            clean_sel = [
+                s.strip()
+                for s in selectors
+                if s.strip()
+                and not s.strip().startswith("@")
+            ][:10]
+
+            selector_text = (
+                f"Key selectors/components: {', '.join(clean_sel)}\n"
+                if clean_sel
+                else ""
+            )
+
+            return (
+                f"File: {file_name} "
+                f"(Plain-text stylesheet/source extract, "
+                f"{total_lines} non-empty lines)\n"
+                "Purpose: Contains CSS-style UI definitions such as variables, "
+                "selectors, layout, colors, and component styling.\n"
+                f"{selector_text}"
+                "The file was interpreted from its actual text rather than "
+                "returned verbatim."
+            )
+
+        if json_like:
+            try:
+                parsed = json.loads(
+                    text
+                )
+
+                if isinstance(
+                    parsed,
+                    dict,
+                ):
+                    keys = list(
+                        parsed.keys()
+                    )
+
+                    return (
+                        f"File: {file_name} "
+                        f"(Text file containing JSON structure, "
+                        f"{total_lines} non-empty lines)\n"
+                        "Key fields: "
+                        + ", ".join(
+                            str(k)
+                            for k in keys[:15]
+                        )
+                    )
+
+                if isinstance(
+                    parsed,
+                    list,
+                ):
+                    return (
+                        f"File: {file_name} "
+                        f"(Text file containing a JSON array, "
+                        f"{len(parsed)} items)\n"
+                        "The file contains structured records rather than prose."
+                    )
+
+            except Exception:
+                pass
+
+        if code_like:
+            symbols = re.findall(
+                r"(?:def|function|class|const|let|var)\s+([a-zA-Z0-9_]+)",
+                text,
+            )
+
+            symbols = sorted(
+                list(
+                    set(
+                        symbols
+                    )
+                )
+            )[:10]
+
+            symbol_text = (
+                f"Declared symbols: {', '.join(symbols)}\n"
+                if symbols
+                else ""
+            )
+
+            return (
+                f"File: {file_name} "
+                f"(Plain-text source/code extract, "
+                f"{total_lines} non-empty lines)\n"
+                "Purpose: Contains program or configuration logic "
+                "represented as plain text.\n"
+                f"{symbol_text}"
+                "The raw source is intentionally summarized instead of "
+                "dumped into the chat."
+            )
+
+        first_lines = non_empty[:3]
+
+        preview = " | ".join(
+            first_lines
+        )
+
+        if len(preview) > 420:
+            preview = (
+                preview[:417]
+                .rstrip()
+                + "..."
+            )
+
+        return (
+            f"File: {file_name} "
+            f"(Plain Text, {total_lines} non-empty lines)\n"
+            "Purpose: Text content supplied by the user for review.\n"
+            f"Opening content: "
+            f"{preview or 'No readable text extracted.'}"
+        )
+
     if ext == ".log":
         return (
-            f"File: {file_name} (Log File, {total_lines} lines)\n"
+            f"File: {file_name} "
+            f"(Log File, {total_lines} lines)\n"
             f"First entry: {lines[0] if lines else ''}\n"
             f"Latest entry: {lines[-1] if lines else ''}"
         )
 
-    return f"File: {file_name} ({ext.lstrip('.').upper()} File, {total_lines} lines)\nSummary: {text[:800]}"
+    preview_lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ][:4]
+
+    preview = " | ".join(
+        preview_lines
+    )
+
+    if len(preview) > 700:
+        preview = (
+            preview[:697]
+            .rstrip()
+            + "..."
+        )
+
+    return (
+        f"File: {file_name} "
+        f"({ext.lstrip('.') or 'UNKNOWN'} File, "
+        f"{total_lines} non-empty lines)\n"
+        f"Summary: "
+        f"{preview or 'No readable text extracted.'}"
+    )
 
 
 def _clean_evidence_text(
@@ -1600,17 +2460,19 @@ def _build_evidence_source_packet(
             filename_by_path.get(
                 source_path
             )
-            or str(
-                result.get(
-                    "file_name",
-                    "",
+            or (
+                str(
+                    result.get(
+                        "file_name",
+                        "",
+                    )
+                ).strip()
+                if isinstance(
+                    result,
+                    dict,
                 )
-            ).strip()
-            if isinstance(
-                result,
-                dict,
+                else ""
             )
-            else ""
         )
 
         if not source_name:
@@ -1622,12 +2484,17 @@ def _build_evidence_source_packet(
                 )
             ).strip()
 
-            for candidate_path, candidate_name in (
-                filename_by_path.items()
-            ):
-                if Path(
-                    candidate_path
-                ).name.lower() in step_description.lower():
+            for (
+                candidate_path,
+                candidate_name,
+            ) in filename_by_path.items():
+
+                if (
+                    Path(
+                        candidate_path
+                    ).name.lower()
+                    in step_description.lower()
+                ):
                     source_name = candidate_name
                     source_path = candidate_path
                     break
@@ -1641,9 +2508,30 @@ def _build_evidence_source_packet(
             result
         )
 
-        ext = Path(source_name).suffix.lower()
-        if ext in {".css", ".json", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".xml", ".yaml", ".yml", ".log"}:
-            extracted_text = _summarize_source_code_file(source_name, extracted_text)
+        ext = Path(
+            source_name
+        ).suffix.lower()
+
+        if ext in {
+            ".txt",
+            ".css",
+            ".json",
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".html",
+            ".xml",
+            ".yaml",
+            ".yml",
+            ".log",
+        }:
+            extracted_text = _summarize_source_code_file(
+                source_name,
+                extracted_text,
+            )
+
         else:
             extracted_text = _clean_evidence_text(
                 extracted_text,
@@ -1652,7 +2540,8 @@ def _build_evidence_source_packet(
 
         if not extracted_text:
             extracted_text = (
-                f"File '{source_name}' was opened, but no readable text was extracted."
+                f"File '{source_name}' was opened, "
+                "but no readable text was extracted."
             )
 
         packet.append(
@@ -1759,6 +2648,13 @@ Do not repeat raw source code verbatim.
 """.strip()
 
     try:
+        from app.services.model_engine.model_router import (
+            route_request,
+        )
+        from app.services.model_engine.ollama_manager import (
+            ollama_manager,
+        )
+
         routing = route_request(
             objective
         )
@@ -1779,8 +2675,34 @@ Do not repeat raw source code verbatim.
             )
         ).strip()
 
-        if response and "###" in response:
-            return response
+        if response:
+            lower_response = response.lower()
+
+            raw_dump_signals = (
+                "/* ========================================================="
+                in response
+                or response.count(";") > 120
+            )
+
+            required_sections = sum(
+                1
+                for item in packet
+                if item.get(
+                    "file_name",
+                    "",
+                ).lower()
+                in lower_response
+            )
+
+            if (
+                required_sections
+                >= max(
+                    1,
+                    len(packet) - 1,
+                )
+                and not raw_dump_signals
+            ):
+                return response
 
     except Exception as exc:
         print(
@@ -1788,35 +2710,93 @@ Do not repeat raw source code verbatim.
             f"{type(exc).__name__}: {exc}"
         )
 
-    # -----------------------------------------------------------------------
-    # Deterministic fallback
-    # -----------------------------------------------------------------------
-
     lines: List[str] = [
         "I reviewed all the attached files and examined their actual contents."
     ]
 
-    for index, item in enumerate(packet, start=1):
-        file_name = item["file_name"]
-        lines.append(f"\n### {index}. {file_name}")
+    for index, item in enumerate(
+        packet,
+        start=1,
+    ):
+        file_name = item[
+            "file_name"
+        ]
 
-        text = item.get("actual_content", "").strip()
+        lines.append(
+            f"\n### {index}. {file_name}"
+        )
 
-        lines.append("What it is:")
-        ext = Path(file_name).suffix.lower()
-        if ext in {".xlsx", ".csv"}:
-            lines.append("Spreadsheet workbook containing structured data tables.")
-        elif ext in {".pdf", ".docx"}:
-            lines.append("Document containing formatted text and section headings.")
-        elif ext in {".png", ".jpg", ".jpeg"}:
-            lines.append("Image file analyzed via local OCR / vision processing.")
-        elif ext in {".css", ".json", ".py", ".js", ".ts", ".jsx", ".tsx", ".md", ".log", ".txt"}:
-            lines.append(f"Text/Source file ({ext.lstrip('.').upper()} format).")
+        text = item.get(
+            "actual_content",
+            "",
+        ).strip()
+
+        lines.append(
+            "What it is:"
+        )
+
+        ext = Path(
+            file_name
+        ).suffix.lower()
+
+        if ext in {
+            ".xlsx",
+            ".csv",
+        }:
+            lines.append(
+                "Spreadsheet workbook containing structured data tables."
+            )
+
+        elif ext in {
+            ".pdf",
+            ".docx",
+        }:
+            lines.append(
+                "Document containing formatted text and section headings."
+            )
+
+        elif ext in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+        }:
+            lines.append(
+                "Image file analyzed via local OCR / vision processing."
+            )
+
+        elif ext in {
+            ".css",
+            ".json",
+            ".py",
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            ".md",
+            ".log",
+            ".txt",
+        }:
+            lines.append(
+                f"Text/Source file "
+                f"({ext.lstrip('.').upper()} format)."
+            )
+
         else:
-            lines.append("Supplied file attachment.")
+            lines.append(
+                "Supplied file attachment."
+            )
 
-        lines.append("\nWhat it contains:")
-        lines.append(text if text else "The local extraction returned no readable text for this file.")
+        lines.append(
+            "\nWhat it contains:"
+        )
+
+        lines.append(
+            text
+            if text
+            else
+            "The local extraction returned no readable text for this file."
+        )
 
     return "\n".join(
         lines
@@ -1839,8 +2819,11 @@ def _build_evidence_review_response(
     return _generate_evidence_review_response(
         objective=str(
             prepared_context.get(
-                "agent_objective",
-                "Review the supplied files.",
+                "original_objective",
+                prepared_context.get(
+                    "agent_objective",
+                    "Review the supplied files.",
+                ),
             )
         ),
         execution=execution,
@@ -1878,7 +2861,9 @@ def _normalize_artifact_path(
         return None
 
     try:
-        path = Path(raw)
+        path = Path(
+            raw
+        )
 
         if path.is_absolute():
             resolved = path.resolve()
@@ -2162,6 +3147,7 @@ def _artifact_label(
         ".png": "image",
         ".jpg": "image",
         ".jpeg": "image",
+        ".webp": "image",
         ".txt": "text file",
         ".md": "Markdown file",
         ".json": "JSON file",
@@ -2173,7 +3159,9 @@ def _artifact_label(
     }
 
     return mapping.get(
-        str(extension).lower(),
+        str(
+            extension
+        ).lower(),
         "file",
     )
 
@@ -2334,6 +3322,10 @@ def _execute_agent_workflow(
         objective=objective,
     )
 
+    prepared_context[
+        "original_objective"
+    ] = objective
+
     try:
         planner_objective = str(
             prepared_context.get(
@@ -2342,19 +3334,101 @@ def _execute_agent_workflow(
             )
         ).strip()
 
+        mission_control = bool(
+            prepared_context.get(
+                "mission_control",
+                False,
+            )
+        )
+
+        evidence_review = bool(
+            prepared_context.get(
+                "evidence_review",
+                False,
+            )
+        )
+
+        if (
+            mission_control
+            and evidence_review
+        ):
+            planner_objective = (
+                planner_objective
+                + "\n\n"
+                + "MANDATORY MISSION CONTROL EVIDENCE REVIEW DELIVERABLE:\n"
+                + "After ALL supplied evidence files have been successfully "
+                + "read, generate a DOCX review report.\n"
+                + "This DOCX report is mandatory for this Mission Control "
+                + "evidence-review workflow.\n"
+                + "The original user wording must not disable this Mission "
+                + "Control deliverable requirement.\n"
+                + "The report MUST use only actual completed reader results.\n"
+                + "Use the existing NOVA document_writer tool.\n"
+                + "Create the report at:\n"
+                + "output/file_review_report.docx\n"
+                + "The report-generation step MUST depend on every source "
+                + "reading step.\n"
+                + "Do not generate the report before all source files have "
+                + "been read successfully.\n"
+                + "Return the generated DOCX as a real workspace artifact."
+            )
+
         plan = (
             agent_planner.create_plan(
                 objective=planner_objective,
             )
         )
 
-        executor = AgentExecutor(
-            auto_confirm=auto_confirm,
+        effective_auto_confirm = (
+            True
+            if (
+                mission_control
+                and evidence_review
+            )
+            else bool(
+                auto_confirm
+            )
         )
+
+        executor = AgentExecutor(
+            auto_confirm=effective_auto_confirm,
+        )
+
+        mission_id = None
+
+        if mission_control:
+            mission_context = prepared_context.get(
+                "mission",
+                {},
+            )
+
+            if isinstance(
+                mission_context,
+                dict,
+            ):
+                mission_id = str(
+                    mission_context.get(
+                        "mission_id",
+                        "",
+                    )
+                ).strip()
+
+            if not mission_id:
+                mission_id = str(
+                    prepared_context.get(
+                        "mission_id",
+                        "",
+                    )
+                ).strip()
 
         execution = executor.execute(
             plan=plan,
             context=prepared_context,
+            mission_id=(
+                mission_id
+                if mission_id
+                else None
+            ),
         )
 
         plan_dump = plan.model_dump(
@@ -2367,21 +3441,11 @@ def _execute_agent_workflow(
             )
         )
 
-        evidence_review = bool(
-            prepared_context.get(
-                "evidence_review",
-                False,
-            )
-        )
-
         if evidence_review:
             response = (
                 _build_evidence_review_response(
                     execution=execution,
-                    prepared_context={
-                        **prepared_context,
-                        "agent_objective": objective,
-                    },
+                    prepared_context=prepared_context,
                 )
             )
 
@@ -2399,6 +3463,38 @@ def _execute_agent_workflow(
                 if is_report_requested
                 else []
             )
+
+            execution_status = str(
+                execution_dump.get(
+                    "status",
+                    "",
+                )
+            ).lower().strip()
+
+            if execution_status in {
+                "cancelled",
+                "canceled",
+            }:
+                execution_dump[
+                    "mission_cancelled"
+                ] = True
+
+            elif (
+                is_report_requested
+                and not artifacts_dump
+            ):
+                print(
+                    "[NOVA MISSION CONTROL] "
+                    "Mandatory evidence-review DOCX was not created "
+                    "or could not be found in workspace/output/."
+                )
+
+                execution_dump[
+                    "mission_deliverable_error"
+                ] = (
+                    "Mandatory evidence-review DOCX was not created "
+                    "or could not be verified in the NOVA workspace output directory."
+                )
 
             return (
                 plan_dump,
@@ -2419,6 +3515,7 @@ def _execute_agent_workflow(
                     artifacts_dump
                 )
             )
+
         else:
             synthesis_context = (
                 build_synthesis_context(
@@ -2433,6 +3530,7 @@ def _execute_agent_workflow(
                         execution_context=synthesis_context,
                     )
                 )
+
             else:
                 response = (
                     "NOVA could not produce a final answer "
@@ -2507,9 +3605,6 @@ def _save_agent_conversation(
         model=None,
     )
 
-    # Mission follow-up chat already keeps the mission evidence
-    # attached to the mission itself. Do not create duplicate
-    # chat attachment rows for every follow-up turn.
     is_mission_chat = bool(
         request_context
         and request_context.get(
@@ -2518,43 +3613,63 @@ def _save_agent_conversation(
     )
 
     if not is_mission_chat:
-        for attachment in (
-            _get_context_attachments(
+        source_references = (
+            _get_context_source_references(
                 request_context
             )
-        ):
-            try:
-                file_data = load_chat_file(
-                    attachment[
-                        "file_id"
-                    ]
-                )
-            except Exception:
+        )
+
+        for attachment in source_references:
+            file_id = attachment.get(
+                "file_id"
+            )
+
+            if not file_id:
                 continue
 
-            add_attachment(
-                db=db,
-                message=saved_user_message,
-                file_id=file_data.get(
-                    "file_id",
-                    attachment[
-                        "file_id"
-                    ],
-                ),
-                filename=file_data.get(
+            try:
+                file_data = load_chat_file(
+                    file_id
+                )
+            except Exception:
+                file_data = None
+
+            if isinstance(
+                file_data,
+                dict,
+            ):
+                filename = file_data.get(
                     "filename",
                     attachment.get(
                         "filename",
                         "Unknown file",
                     ),
-                ),
-                content_type=file_data.get(
+                )
+
+                content_type = file_data.get(
                     "content_type",
                     attachment.get(
                         "content_type",
                         "",
                     ),
-                ),
+                )
+            else:
+                filename = attachment.get(
+                    "filename",
+                    "Unknown file",
+                )
+
+                content_type = attachment.get(
+                    "content_type",
+                    "",
+                )
+
+            add_attachment(
+                db=db,
+                message=saved_user_message,
+                file_id=file_id,
+                filename=filename,
+                content_type=content_type,
             )
 
     agent_data_to_save = {
@@ -2659,6 +3774,10 @@ def run_mission(
 ) -> MissionRunResponse:
     """
     Execute one real Mission Control workflow.
+
+    Evidence can come from:
+    - normal chat uploads
+    - Knowledge Vault file selections
     """
 
     title = request.title.strip()
@@ -2676,6 +3795,19 @@ def run_mission(
             detail="Mission objective cannot be empty.",
         )
 
+    # -----------------------------------------------------------------------
+    # GUARANTEE A REAL MISSION ID
+    # -----------------------------------------------------------------------
+
+    mission_id = str(
+        request.mission_id or ""
+    ).strip()
+
+    if not mission_id:
+        mission_id = (
+            f"mission-{uuid.uuid4().hex[:12]}"
+        )
+
     mission_context: Dict[
         str,
         Any,
@@ -2683,38 +3815,90 @@ def run_mission(
         request.context or {}
     )
 
-    supplied_attachments = (
-        _get_context_attachments(
+    mission_context[
+        "mission_control"
+    ] = True
+
+    mission_context[
+        "mission_id"
+    ] = mission_id
+
+    source_references = (
+        _get_context_source_references(
             mission_context
         )
     )
 
-    if not supplied_attachments:
+    # -----------------------------------------------------------------------
+    # REAL EVIDENCE REQUIREMENT
+    # -----------------------------------------------------------------------
+
+    if not source_references:
         raise HTTPException(
             status_code=400,
             detail=(
                 "MISSION REQUIRES AT LEAST ONE REAL "
-                "EVIDENCE FILE."
+                "EVIDENCE FILE OR KNOWLEDGE VAULT FILE."
             ),
         )
 
-    # Validate all uploaded references before starting
-    # planner/executor work.
-    for attachment in supplied_attachments:
+    # -----------------------------------------------------------------------
+    # VALIDATE EVERY REAL SOURCE
+    # -----------------------------------------------------------------------
+
+    for reference in source_references:
+        file_id = str(
+            reference.get(
+                "file_id",
+                "",
+            )
+        ).strip()
+
+        if not file_id:
+            continue
+
+        source_type = str(
+            reference.get(
+                "source_type",
+                "chat",
+            )
+        ).strip().lower()
+
         try:
-            source_path = (
-                _resolve_chat_upload_path(
-                    attachment[
-                        "file_id"
+            if source_type == "knowledge-vault":
+                vault_id = str(
+                    reference.get(
+                        "vault_id",
+                        "",
+                    )
+                    or ""
+                ).strip()
+
+                source_path = (
+                    _resolve_vault_file(
+                        file_id=file_id,
+                        vault_id=(
+                            vault_id
+                            or None
+                        ),
+                    )[
+                        "source_path"
                     ]
                 )
-            )
+
+            else:
+                source_path = (
+                    _resolve_chat_upload_path(
+                        file_id
+                    )
+                )
+
         except FileNotFoundError as exc:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     "MISSION EVIDENCE FILE IS NOT AVAILABLE: "
-                    f"{attachment.get('filename') or attachment['file_id']}"
+                    f"{reference.get('filename') or file_id}"
                 ),
             ) from exc
 
@@ -2723,7 +3907,8 @@ def run_mission(
                 status_code=400,
                 detail=(
                     "MISSION EVIDENCE VALIDATION FAILED: "
-                    f"{attachment.get('filename') or attachment['file_id']}"
+                    f"{reference.get('filename') or file_id}. "
+                    f"{exc}"
                 ),
             ) from exc
 
@@ -2742,6 +3927,36 @@ def run_mission(
                 ),
             )
 
+    # -----------------------------------------------------------------------
+    # NORMALIZE CONTEXT
+    # -----------------------------------------------------------------------
+
+    mission_context[
+        "source_references"
+    ] = source_references
+
+    mission_context[
+        "mission_attachments"
+    ] = source_references
+
+    mission_context[
+        "vault_file_ids"
+    ] = [
+        reference[
+            "file_id"
+        ]
+        for reference in source_references
+        if reference.get(
+            "source_type"
+        ) == "knowledge-vault"
+    ]
+
+    mission_context[
+        "selected_vault_id"
+    ] = _get_context_vault_id(
+        mission_context
+    )
+
     mission_context[
         "mission"
     ] = {
@@ -2759,20 +3974,23 @@ def run_mission(
             )
             else {}
         ),
-        "mission_id": request.mission_id,
+        "mission_id": mission_id,
         "title": title,
         "execution_boundary": (
             "LOCAL / AIR-GAPPED"
         ),
         "external_ai_calls": 0,
         "evidence_count": len(
-            supplied_attachments
+            source_references
+        ),
+        "knowledge_vault_evidence_count": sum(
+            1
+            for reference in source_references
+            if reference.get(
+                "source_type"
+            ) == "knowledge-vault"
         ),
     }
-
-    mission_context[
-        "mission_attachments"
-    ] = supplied_attachments
 
     mission_objective = (
         f"MISSION: {title}\n\n"
@@ -2822,24 +4040,56 @@ def run_mission(
             ) or []
         )
 
-        if execution_status in {
+        mission_deliverable_error = (
+            execution_dump.get(
+                "mission_deliverable_error"
+            )
+        )
+
+        mission_cancelled = (
+            execution_status
+            in {
+                "cancelled",
+                "canceled",
+            }
+            or bool(
+                execution_dump.get(
+                    "mission_cancelled",
+                    False,
+                )
+            )
+        )
+
+        if mission_cancelled:
+            mission_status = "STOPPED"
+
+        elif execution_status in {
             "failed",
             "error",
             "failure",
         }:
-            mission_status = (
-                "FAILED"
-            )
+            mission_status = "FAILED"
 
         elif failed_steps:
-            mission_status = (
-                "FAILED"
-            )
+            mission_status = "FAILED"
 
         elif blocked_steps:
-            mission_status = (
-                "BLOCKED"
+            mission_status = "BLOCKED"
+
+        elif mission_deliverable_error:
+            mission_status = "FAILED"
+
+        elif (
+            mission_context.get(
+                "mission_control",
+                False,
             )
+            and _is_evidence_review_request(
+                mission_objective
+            )
+            and not artifacts_dump
+        ):
+            mission_status = "FAILED"
 
         elif execution_status in {
             "completed",
@@ -2847,32 +4097,31 @@ def run_mission(
             "success",
             "successful",
         }:
-            mission_status = (
-                "COMPLETED"
-            )
+            mission_status = "COMPLETED"
 
         else:
-            mission_status = (
-                "COMPLETED"
-            )
+            mission_status = "COMPLETED"
 
         sovereignty = {
-            "execution_mode": (
-                "LOCAL"
-            ),
-            "network_mode": (
-                "AIR-GAPPED"
-            ),
+            "execution_mode": "LOCAL",
+            "network_mode": "AIR-GAPPED",
             "external_ai_calls": 0,
             "local_reasoning": True,
             "local_tool_execution": True,
             "artifact_directory": (
                 "workspace/output/"
             ),
+            "knowledge_vault_sources": sum(
+                1
+                for reference in source_references
+                if reference.get(
+                    "source_type"
+                ) == "knowledge-vault"
+            ),
         }
 
         return MissionRunResponse(
-            mission_id=request.mission_id,
+            mission_id=mission_id,
             title=title,
             status=mission_status,
             conversation_id=conversation_id,
@@ -2898,3 +4147,94 @@ def run_mission(
                 "The sovereign mission workflow encountered an error."
             ),
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# MISSION STOP
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/mission/{mission_id}/stop",
+)
+def stop_mission(
+    mission_id: str,
+) -> Dict[str, Any]:
+    """
+    Request cooperative cancellation of a running Mission Control mission.
+
+    The currently executing tool is allowed to finish. The executor then
+    stops before starting remaining steps.
+    """
+
+    normalized_mission_id = str(
+        mission_id or ""
+    ).strip()
+
+    if not normalized_mission_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Mission ID cannot be empty.",
+        )
+
+    accepted = set_mission_cancelled(
+        normalized_mission_id
+    )
+
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid mission ID.",
+        )
+
+    return {
+        "mission_id": normalized_mission_id,
+        "status": "STOP_REQUESTED",
+        "message": (
+            "Mission stop request accepted. "
+            "The executor will stop before starting the next step."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# MISSION DELETE
+# ---------------------------------------------------------------------------
+
+@router.delete(
+    "/mission/{mission_id}",
+)
+def delete_mission(
+    mission_id: str,
+) -> Dict[str, Any]:
+    """
+    Remove a Mission Control mission from active backend execution state.
+
+    Source files, including Knowledge Vault files, remain untouched.
+    """
+
+    normalized_mission_id = str(
+        mission_id or ""
+    ).strip()
+
+    if not normalized_mission_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Mission ID cannot be empty.",
+        )
+
+    cancellation_requested = set_mission_cancelled(
+        normalized_mission_id
+    )
+
+    return {
+        "mission_id": normalized_mission_id,
+        "status": "DELETE_REQUESTED",
+        "cancel_requested": bool(
+            cancellation_requested
+        ),
+        "message": (
+            "Mission deletion request accepted. "
+            "Any in-flight execution will be cooperatively stopped, "
+            "while user source evidence remains untouched."
+        ),
+    }

@@ -23,7 +23,6 @@ import {
   Send,
   ServerCog,
   ShieldCheck,
-  Sparkles,
   Target,
   Timer,
   Workflow,
@@ -45,11 +44,16 @@ import {
   useState,
 } from "react";
 
-const API_URL =
-  "http://127.0.0.1:8001";
+const API_URL = "http://127.0.0.1:8001";
 
 const MISSION_API_URL =
   `${API_URL}/api/agents/mission/run`;
+
+const MISSION_STOP_API_URL =
+  `${API_URL}/api/agents/mission/stop`;
+
+const MISSION_DELETE_API_URL =
+  `${API_URL}/api/agents/mission`;
 
 const AGENT_API_URL =
   `${API_URL}/api/agents/run`;
@@ -98,6 +102,7 @@ const STATUS_FILTERS = [
   "RUNNING",
   "READY",
   "COMPLETED",
+  "STOPPED",
   "FAILED",
 ];
 
@@ -168,28 +173,36 @@ function normalizeArtifacts(
       id:
         artifact?.step_id ||
         artifact?.stepId ||
+        artifact?.file_path ||
+        artifact?.filePath ||
         `artifact-${index}`,
+
       fileName:
         artifact?.file_name ||
         artifact?.fileName ||
         "Generated artifact",
+
       filePath:
         artifact?.file_path ||
         artifact?.filePath ||
         "",
+
       extension:
         artifact?.extension ||
         "",
+
       sizeBytes:
         Number(
-          artifact?.size_bytes ||
-            artifact?.sizeBytes ||
+          artifact?.size_bytes ??
+            artifact?.sizeBytes ??
             0
         ),
+
       verification:
         artifact?.verification_status ||
         artifact?.verificationStatus ||
         "COMPLETED",
+
       available:
         artifact?.available !== false,
     })
@@ -276,15 +289,13 @@ function getStepStatus(
     ).toLowerCase();
 
   if (
-    rawStatus ===
-    "completed"
+    rawStatus === "completed"
   ) {
     return "COMPLETED";
   }
 
   if (
-    rawStatus ===
-    "running"
+    rawStatus === "running"
   ) {
     return "RUNNING";
   }
@@ -503,33 +514,38 @@ function saveStoredMissions(
       )
     );
   } catch {
-    // Ignore storage failures.
+    // Ignore browser storage failures.
   }
+}
+
+function getFileExtension(
+  file
+) {
+  return String(
+    file?.extension ||
+      file?.name
+        ?.split(".")
+        .pop() ||
+      ""
+  )
+    .replace(
+      ".",
+      ""
+    )
+    .toLowerCase();
 }
 
 function isSpreadsheetFile(
   file
 ) {
-  const extension =
-    String(
-      file?.extension ||
-        file?.name
-          ?.split(".")
-          .pop() ||
-        ""
-    )
-      .replace(
-        ".",
-        ""
-      )
-      .toLowerCase();
-
   return [
     "xlsx",
     "xls",
     "csv",
   ].includes(
-    extension
+    getFileExtension(
+      file
+    )
   );
 }
 
@@ -582,9 +598,12 @@ function StatusBadge({
             "FAILED"
           ? X
           : normalized ===
-              "READY"
-            ? CheckCircle2
-            : Target;
+              "STOPPED"
+            ? Pause
+            : normalized ===
+                "READY"
+              ? CheckCircle2
+              : Target;
 
   const running =
     normalized === "RUNNING";
@@ -595,6 +614,9 @@ function StatusBadge({
 
   const failed =
     normalized === "FAILED";
+
+  const stopped =
+    normalized === "STOPPED";
 
   return (
     <span
@@ -613,25 +635,31 @@ function StatusBadge({
             ? "1px solid rgba(123,226,242,0.30)"
             : failed
               ? "1px solid rgba(239,184,167,0.30)"
-              : running
-                ? "1px solid rgba(123,225,244,0.36)"
-                : "1px solid rgba(255,255,255,0.10)",
+              : stopped
+                ? "1px solid rgba(255,200,102,0.28)"
+                : running
+                  ? "1px solid rgba(123,225,244,0.36)"
+                  : "1px solid rgba(255,255,255,0.10)",
         background:
           completed
             ? "rgba(94,190,211,0.08)"
             : failed
               ? "rgba(133,63,50,0.08)"
-              : running
-                ? "rgba(94,195,221,0.10)"
-                : "rgba(255,255,255,0.025)",
+              : stopped
+                ? "rgba(255,190,77,0.08)"
+                : running
+                  ? "rgba(94,195,221,0.10)"
+                  : "rgba(255,255,255,0.025)",
         color:
           completed
             ? "#a9eff9"
             : failed
               ? "#e8b7a7"
-              : running
-                ? "#baf3ff"
-                : "#a8b6bc",
+              : stopped
+                ? "#ffd88d"
+                : running
+                  ? "#baf3ff"
+                  : "#a8b6bc",
         fontSize:
           9,
         fontWeight:
@@ -1277,6 +1305,63 @@ function MissionMarkdown({
     >
       <ReactMarkdown
         components={{
+          h1: ({
+            children,
+          }) => (
+            <h1
+              style={{
+                color:
+                  "#e8f8fb",
+                fontSize:
+                  18,
+                lineHeight:
+                  1.3,
+                margin:
+                  "0 0 10px",
+              }}
+            >
+              {children}
+            </h1>
+          ),
+
+          h2: ({
+            children,
+          }) => (
+            <h2
+              style={{
+                color:
+                  "#e5f7fa",
+                fontSize:
+                  15,
+                lineHeight:
+                  1.35,
+                margin:
+                  "14px 0 9px",
+              }}
+            >
+              {children}
+            </h2>
+          ),
+
+          h3: ({
+            children,
+          }) => (
+            <h3
+              style={{
+                color:
+                  "#dff4f8",
+                fontSize:
+                  13,
+                lineHeight:
+                  1.4,
+                margin:
+                  "12px 0 8px",
+              }}
+            >
+              {children}
+            </h3>
+          ),
+
           p: ({
             children,
           }) => (
@@ -1336,7 +1421,12 @@ function MissionMarkdown({
           li: ({
             children,
           }) => (
-            <li>
+            <li
+              style={{
+                marginBottom:
+                  4,
+              }}
+            >
               {children}
             </li>
           ),
@@ -1418,9 +1508,7 @@ export default function Missions() {
   const [
     selectedMissionId,
     setSelectedMissionId,
-  ] = useState(
-    null
-  );
+  ] = useState(null);
 
   const [
     searchQuery,
@@ -1576,7 +1664,9 @@ export default function Missions() {
     saveStoredMissions(
       missions
     );
-  }, [missions]);
+  }, [
+    missions,
+  ]);
 
   useEffect(() => {
     const running =
@@ -1604,7 +1694,9 @@ export default function Missions() {
       window.clearInterval(
         timer
       );
-  }, [missions]);
+  }, [
+    missions,
+  ]);
 
   const selectedMission =
     missions.find(
@@ -1638,7 +1730,9 @@ export default function Missions() {
         try {
           const response =
             await fetch(
-              `${HISTORY_API_URL}/${selectedMission.conversationId}`
+              `${HISTORY_API_URL}/${encodeURIComponent(
+                selectedMission.conversationId
+              )}`
             );
 
           if (!response.ok) {
@@ -1741,6 +1835,11 @@ export default function Missions() {
                 query
               ) ||
             mission.type
+              .toLowerCase()
+              .includes(
+                query
+              ) ||
+            mission.objective
               .toLowerCase()
               .includes(
                 query
@@ -2320,6 +2419,8 @@ export default function Missions() {
                     [],
                   error:
                     "",
+                  conversationId:
+                    null,
                 }
               : {}),
           }
@@ -2406,47 +2507,70 @@ export default function Missions() {
             3,
             "0"
           )}`,
-          number: String(
-            nextId
-          ).padStart(
-            2,
-            "0"
-          ),
+
+          number:
+            String(
+              nextId
+            ).padStart(
+              2,
+              "0"
+            ),
+
           title,
+
           subtitle:
             "Sovereign intelligence workflow",
+
           description:
             objective,
+
           objective,
+
           type:
             template.type,
+
           priority:
             newMissionPriority,
+
           autonomy:
             newMissionAutonomy,
+
           status:
             "READY",
+
           progress: 0,
+
           steps: 0,
-          completedSteps: 0,
+
+          completedSteps:
+            0,
+
           duration:
             "00:00",
+
           evidence:
             normalizedFiles.length,
+
           sources:
             normalizedFiles.map(
               (file) =>
                 file.filename
             ),
+
           attachments:
             normalizedFiles,
+
           outputs: [],
+
           confidence:
             null,
+
           created:
             getTodayLabel(),
+
           updated:
             "JUST NOW",
+
           conversationId:
             null,
         });
@@ -2492,13 +2616,8 @@ export default function Missions() {
       const startedAt =
         Date.now();
 
-      setMissionError(
-        ""
-      );
-
-      setMissionChatError(
-        ""
-      );
+      setMissionError("");
+      setMissionChatError("");
 
       setLaunchingMission(
         true
@@ -2526,6 +2645,8 @@ export default function Missions() {
             null,
           response:
             "",
+          outputs: [],
+          steps: 0,
         }
       );
 
@@ -2544,26 +2665,35 @@ export default function Missions() {
                 JSON.stringify({
                   mission_id:
                     selectedMission.id,
+
                   title:
                     selectedMission.title,
+
                   objective:
                     selectedMission.objective,
+
                   context: {
                     source:
                       "nova-mission-control",
+
                     mission_type:
                       selectedMission.type,
+
                     priority:
                       selectedMission.priority,
+
                     autonomy:
                       selectedMission.autonomy,
+
                     attachments:
                       selectedMission.attachments ||
                       [],
+
                     mission_sources:
                       selectedMission.sources ||
                       [],
                   },
+
                   auto_confirm:
                     true,
                 }),
@@ -2623,8 +2753,16 @@ export default function Missions() {
             execution
           ).length;
 
+        const executionReportedTotal =
+          Number(
+            execution?.total_steps ||
+              execution?.step_count ||
+              0
+          );
+
         const stepCount =
           planSteps.length ||
+          executionReportedTotal ||
           completedSteps;
 
         const returnedStatus =
@@ -2645,24 +2783,54 @@ export default function Missions() {
               "SUCCESSFUL"
             ? "COMPLETED"
             : returnedStatus ===
-                "FAILED"
-              ? "FAILED"
+                "STOPPED" ||
+              returnedStatus ===
+                "STOPPING" ||
+              returnedStatus ===
+                "CANCELLED" ||
+              returnedStatus ===
+                "CANCELED"
+              ? "STOPPED"
               : returnedStatus ===
-                  "BLOCKED"
+                  "FAILED"
                 ? "FAILED"
-                : "RUNNING";
+                : returnedStatus ===
+                    "BLOCKED"
+                  ? "FAILED"
+                  : returnedStatus ===
+                      "RUNNING"
+                    ? "RUNNING"
+                    : "FAILED";
 
         const progress =
           normalizedStatus ===
           "COMPLETED"
             ? 100
-            : stepCount > 0
-              ? Math.round(
-                  (completedSteps /
-                    stepCount) *
-                    100
-                )
-              : 1;
+            : normalizedStatus ===
+                "STOPPED"
+              ? stepCount > 0
+                ? Math.round(
+                    (completedSteps /
+                      stepCount) *
+                      100
+                  )
+                : 1
+              : normalizedStatus ===
+                  "FAILED"
+                ? stepCount > 0
+                  ? Math.round(
+                      (completedSteps /
+                        stepCount) *
+                        100
+                    )
+                  : 1
+                : stepCount > 0
+                  ? Math.round(
+                      (completedSteps /
+                        stepCount) *
+                        100
+                    )
+                  : 1;
 
         const finishedAt =
           Date.now();
@@ -2720,10 +2888,14 @@ export default function Missions() {
                 ?.length ||
               0,
 
-            error: "",
+            error:
+              payload.error ||
+              execution?.error ||
+              "",
 
             conversationId:
               payload.conversation_id ||
+              payload.conversationId ||
               selectedMission.conversationId ||
               null,
           });
@@ -2755,14 +2927,18 @@ export default function Missions() {
           {
             status:
               "FAILED",
+
             updated:
               "JUST NOW",
+
             finishedAt,
+
             duration:
               formatRuntime(
                 startedAt,
                 finishedAt
               ),
+
             error:
               message,
           }
@@ -2799,12 +2975,19 @@ export default function Missions() {
       const localUserMessage =
         {
           id: `local-user-${Date.now()}`,
-          role: "user",
+
+          role:
+            "user",
+
           content:
             message,
+
           createdAt:
             new Date(),
-          attachments: [],
+
+          attachments:
+            [],
+
           agent:
             null,
         };
@@ -2844,10 +3027,12 @@ export default function Missions() {
             {
               method:
                 "POST",
+
               headers: {
                 "Content-Type":
                   "application/json",
               },
+
               body:
                 JSON.stringify({
                   objective:
@@ -2945,9 +3130,15 @@ export default function Missions() {
           );
         }
 
+        const assistantArtifacts =
+          normalizeArtifacts(
+            payload?.artifacts
+          );
+
         const assistantMessage =
           {
-            id: `local-assistant-${Date.now()}`,
+            id:
+              `local-assistant-${Date.now()}`,
 
             role:
               "assistant",
@@ -2971,9 +3162,7 @@ export default function Missions() {
                 null,
 
               artifacts:
-                normalizeArtifacts(
-                  payload?.artifacts
-                ),
+                assistantArtifacts,
             },
           };
 
@@ -2999,25 +3188,28 @@ export default function Missions() {
         }
 
         if (
-          Array.isArray(
-            payload?.artifacts
-          ) &&
-          payload.artifacts.length
+          assistantArtifacts.length
         ) {
-          const artifacts =
-            normalizeArtifacts(
-              payload.artifacts
-            );
-
           updateMission(
             selectedMission.id,
             {
-              artifacts,
+              artifacts:
+                assistantArtifacts,
+
               outputs:
-                artifacts.map(
+                assistantArtifacts.map(
                   (artifact) =>
                     artifact.fileName
                 ),
+
+              response:
+                responseText,
+            }
+          );
+        } else {
+          updateMission(
+            selectedMission.id,
+            {
               response:
                 responseText,
             }
@@ -3049,6 +3241,235 @@ export default function Missions() {
       }
     };
 
+  const stopMission =
+    async (missionId) => {
+      if (
+        !missionId
+      ) {
+        return false;
+      }
+
+      const mission =
+        missions.find(
+          (item) =>
+            item.id ===
+            missionId
+        );
+
+      if (!mission) {
+        return false;
+      }
+
+      const startedAt =
+        mission.startedAt ||
+        Date.now();
+
+      try {
+        const response =
+          await fetch(
+            MISSION_STOP_API_URL,
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  mission_id:
+                    missionId,
+                }),
+            }
+          );
+
+        let payload = null;
+
+        try {
+          payload =
+            await response.json();
+        } catch {
+          payload = null;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            payload?.detail ||
+              payload?.message ||
+              "Unable to stop this mission."
+          );
+        }
+
+        const finishedAt =
+          Date.now();
+
+        const execution =
+          payload?.execution ||
+          mission.execution ||
+          null;
+
+        const completedSteps =
+          getCompletedStepIds(
+            execution
+          ).length ||
+          mission.completedSteps ||
+          0;
+
+        updateMission(
+          missionId,
+          {
+            status:
+              "STOPPED",
+
+            progress:
+              mission.progress ||
+              1,
+
+            completedSteps,
+
+            finishedAt,
+
+            duration:
+              formatRuntime(
+                startedAt,
+                finishedAt
+              ),
+
+            updated:
+              "JUST NOW",
+
+            response:
+              payload?.response ||
+              mission.response ||
+              "Mission execution was stopped by the user before completion.",
+
+            execution,
+
+            error:
+              "",
+
+            ...(payload?.sovereignty
+              ? {
+                  sovereignty:
+                    payload.sovereignty,
+                }
+              : {}),
+          }
+        );
+
+        setSelectedMissionId(
+          missionId
+        );
+
+        setMissionError("");
+
+        return true;
+      } catch (
+        error
+      ) {
+        setMissionError(
+          error?.message ||
+            "Unable to stop this mission."
+        );
+
+        return false;
+      }
+    };
+
+  const deleteMission =
+    async () => {
+      if (
+        !selectedMission
+      ) {
+        return;
+      }
+
+      if (
+        !window.confirm(
+          `Delete mission "${selectedMission.title}"? This action cannot be undone.`
+        )
+      ) {
+        return;
+      }
+
+      try {
+        if (
+          selectedMission.status ===
+          "RUNNING"
+        ) {
+          const stopped =
+            await stopMission(
+              selectedMission.id
+            );
+
+          if (!stopped) {
+            return;
+          }
+        }
+
+        const response =
+          await fetch(
+            `${MISSION_DELETE_API_URL}/${encodeURIComponent(
+              selectedMission.id
+            )}`,
+            {
+              method:
+                "DELETE",
+            }
+          );
+
+        if (
+          response.ok ||
+          response.status ===
+            404
+        ) {
+          const remaining =
+            missions.filter(
+              (mission) =>
+                mission.id !==
+                selectedMission.id
+            );
+
+          setMissions(
+            remaining
+          );
+
+          setSelectedMissionId(
+            remaining[0]?.id ||
+              null
+          );
+
+          setMissionError("");
+
+          return;
+        }
+
+        let payload = null;
+
+        try {
+          payload =
+            await response.json();
+        } catch {
+          payload =
+            null;
+        }
+
+        throw new Error(
+          payload?.detail ||
+            "Unable to delete this mission."
+        );
+      } catch (
+        error
+      ) {
+        setMissionError(
+          error?.message ||
+            "Unable to delete this mission."
+        );
+      }
+    };
+
   const clearMissionState =
     () => {
       if (
@@ -3062,48 +3483,56 @@ export default function Missions() {
         {
           status:
             "READY",
-          progress: 0,
-          completedSteps: 0,
+
+          progress:
+            0,
+
+          completedSteps:
+            0,
+
           duration:
             "00:00",
+
           startedAt:
             null,
+
           finishedAt:
             null,
+
           plan:
             null,
+
           execution:
             null,
-          artifacts: [],
+
+          artifacts:
+            [],
+
           sovereignty:
             null,
+
           response:
             "",
+
           error:
             "",
-          outputs: [],
-          steps: 0,
+
+          outputs:
+            [],
+
+          steps:
+            0,
+
+          conversationId:
+            null,
         }
       );
 
-      setMissionError(
-        ""
+      setMissionChatMessages(
+        []
       );
-    };
 
-  const togglePauseDisplay =
-    () => {
-      if (
-        !selectedMission ||
-        selectedMission.status !==
-          "RUNNING"
-      ) {
-        return;
-      }
-
-      setMissionError(
-        "Pause is not exposed by the current synchronous mission endpoint."
-      );
+      setMissionError("");
     };
 
   const planSteps =
@@ -3130,14 +3559,35 @@ export default function Missions() {
     selectedMission?.status !==
       "RUNNING";
 
+  const runtimeSovereignty =
+    selectedMission?.sovereignty ||
+    null;
+
+  const hasVerifiedSovereignty =
+    Boolean(
+      runtimeSovereignty &&
+      (
+        runtimeSovereignty.execution_mode ||
+        runtimeSovereignty.network_mode ||
+        runtimeSovereignty.external_ai_calls !=
+          null ||
+        runtimeSovereignty.local_reasoning !=
+          null
+      )
+    );
+
+  void runtimeTick;
+
   return (
     <>
       <div
         style={{
           minHeight:
             "calc(100vh - 70px)",
+
           padding:
             "34px clamp(22px, 4vw, 58px) 60px",
+
           color:
             "#edf5f7",
         }}
@@ -3146,8 +3596,10 @@ export default function Missions() {
           style={{
             width:
               "100%",
+
             maxWidth:
               1760,
+
             margin:
               "0 auto",
           }}
@@ -3170,11 +3622,16 @@ export default function Missions() {
               style={{
                 display:
                   "flex",
+
                 justifyContent:
                   "space-between",
+
                 alignItems:
                   "flex-end",
-                gap: 28,
+
+                gap:
+                  28,
+
                 flexWrap:
                   "wrap",
               }}
@@ -3189,27 +3646,40 @@ export default function Missions() {
                   style={{
                     display:
                       "flex",
+
                     alignItems:
                       "center",
-                    gap: 9,
+
+                    gap:
+                      9,
+
                     color:
                       "#6e7b83",
+
                     fontFamily:
                       "monospace",
+
                     fontSize:
                       10,
+
                     letterSpacing:
                       "0.17em",
                   }}
                 >
                   <span
                     style={{
-                      width: 7,
-                      height: 7,
+                      width:
+                        7,
+
+                      height:
+                        7,
+
                       borderRadius:
                         "50%",
+
                       background:
                         "#8ce8fa",
+
                       boxShadow:
                         "0 0 14px rgba(140,232,250,0.75)",
                     }}
@@ -3222,12 +3692,16 @@ export default function Missions() {
                   style={{
                     margin:
                       "14px 0 0",
+
                     fontSize:
                       "clamp(38px, 5vw, 68px)",
+
                     lineHeight:
                       0.98,
+
                     letterSpacing:
                       "-0.048em",
+
                     fontWeight:
                       800,
                   }}
@@ -3247,12 +3721,16 @@ export default function Missions() {
                   style={{
                     maxWidth:
                       820,
+
                     margin:
                       "16px 0 0",
+
                     color:
                       "#75828a",
+
                     fontSize:
                       13,
+
                     lineHeight:
                       1.7,
                   }}
@@ -3267,17 +3745,25 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 11,
+
+                  gap:
+                    11,
+
                   padding:
                     "13px 16px",
+
                   minWidth:
-                    235,
+                    250,
+
                   border:
                     "1px solid rgba(117,221,242,0.16)",
+
                   background:
                     "rgba(64,147,169,0.045)",
+
                   borderRadius:
                     5,
                 }}
@@ -3292,8 +3778,10 @@ export default function Missions() {
                     style={{
                       color:
                         "#7d8c94",
+
                       fontSize:
                         8,
+
                       letterSpacing:
                         "0.14em",
                     }}
@@ -3305,18 +3793,40 @@ export default function Missions() {
                     style={{
                       display:
                         "block",
+
                       marginTop:
                         5,
+
                       color:
                         "#d9f8fe",
+
                       fontFamily:
                         "monospace",
+
                       fontSize:
                         10,
                     }}
                   >
                     LOCAL / AIR-GAPPED
                   </strong>
+
+                  <div
+                    style={{
+                      marginTop:
+                        4,
+
+                      color:
+                        "#56666e",
+
+                      fontSize:
+                        7,
+
+                      letterSpacing:
+                        "0.08em",
+                    }}
+                  >
+                    CONFIGURED WORKSPACE BOUNDARY
+                  </div>
                 </div>
               </div>
             </div>
@@ -3340,9 +3850,13 @@ export default function Missions() {
             style={{
               display:
                 "grid",
+
               gridTemplateColumns:
                 "repeat(4, minmax(0, 1fr))",
-              gap: 10,
+
+              gap:
+                10,
+
               marginTop:
                 30,
             }}
@@ -3401,12 +3915,16 @@ export default function Missions() {
               style={{
                 marginTop:
                   14,
+
                 padding:
                   "13px 15px",
+
                 border:
                   "1px solid rgba(239,184,167,0.25)",
+
                 background:
                   "rgba(120,52,39,0.08)",
+
                 borderRadius:
                   4,
               }}
@@ -3415,10 +3933,13 @@ export default function Missions() {
                 style={{
                   color:
                     "#e6b2a2",
+
                   fontFamily:
                     "monospace",
+
                   fontSize:
                     9,
+
                   letterSpacing:
                     "0.11em",
                 }}
@@ -3430,10 +3951,13 @@ export default function Missions() {
                 style={{
                   marginTop:
                     5,
+
                   color:
                     "#b3948b",
+
                   fontSize:
                     10,
+
                   lineHeight:
                     1.5,
                 }}
@@ -3447,15 +3971,21 @@ export default function Missions() {
             style={{
               display:
                 "grid",
+
               gridTemplateColumns:
                 "minmax(350px, 0.72fr) minmax(520px, 1.28fr)",
-              gap: 16,
+
+              gap:
+                16,
+
               marginTop:
                 16,
+
               alignItems:
                 "start",
             }}
           >
+            {/* LEFT MISSION REGISTRY */}
             <motion.section
               initial={{
                 opacity: 0,
@@ -3474,10 +4004,13 @@ export default function Missions() {
               style={{
                 border:
                   "1px solid rgba(255,255,255,0.075)",
+
                 background:
                   "rgba(7,10,13,0.82)",
+
                 borderRadius:
                   5,
+
                 overflow:
                   "hidden",
               }}
@@ -3486,6 +4019,7 @@ export default function Missions() {
                 style={{
                   padding:
                     "19px 20px 16px",
+
                   borderBottom:
                     "1px solid rgba(255,255,255,0.055)",
                 }}
@@ -3494,11 +4028,15 @@ export default function Missions() {
                   style={{
                     display:
                       "flex",
+
                     justifyContent:
                       "space-between",
+
                     alignItems:
                       "center",
-                    gap: 15,
+
+                    gap:
+                      15,
                   }}
                 >
                   <div>
@@ -3506,13 +4044,19 @@ export default function Missions() {
                       style={{
                         display:
                           "flex",
+
                         alignItems:
                           "center",
-                        gap: 8,
+
+                        gap:
+                          8,
+
                         color:
                           "#637179",
+
                         fontSize:
                           9,
+
                         letterSpacing:
                           "0.14em",
                       }}
@@ -3527,8 +4071,10 @@ export default function Missions() {
                       style={{
                         margin:
                           "8px 0 0",
+
                         fontSize:
                           17,
+
                         lineHeight:
                           1.1,
                       }}
@@ -3540,9 +4086,7 @@ export default function Missions() {
                   <button
                     type="button"
                     onClick={() => {
-                      setMissionError(
-                        ""
-                      );
+                      setMissionError("");
                       setShowNewMission(
                         true
                       );
@@ -3550,27 +4094,40 @@ export default function Missions() {
                     style={{
                       display:
                         "inline-flex",
+
                       alignItems:
                         "center",
-                      gap: 7,
+
+                      gap:
+                        7,
+
                       padding:
                         "10px 12px",
+
                       border:
                         "1px solid rgba(128,224,246,0.28)",
+
                       background:
                         "rgba(105,188,211,0.08)",
+
                       color:
                         "#d8f7fd",
+
                       fontSize:
                         9,
+
                       fontWeight:
                         800,
+
                       letterSpacing:
                         "0.11em",
+
                       cursor:
                         "pointer",
+
                       borderRadius:
                         4,
+
                       whiteSpace:
                         "nowrap",
                     }}
@@ -3586,17 +4143,25 @@ export default function Missions() {
                   style={{
                     display:
                       "flex",
+
                     alignItems:
                       "center",
-                    gap: 9,
+
+                    gap:
+                      9,
+
                     marginTop:
                       16,
+
                     padding:
                       "11px 12px",
+
                     border:
                       "1px solid rgba(255,255,255,0.06)",
+
                     background:
                       "rgba(255,255,255,0.018)",
+
                     borderRadius:
                       4,
                   }}
@@ -3621,18 +4186,25 @@ export default function Missions() {
                     style={{
                       flex:
                         1,
+
                       minWidth:
                         0,
+
                       border:
                         "none",
+
                       outline:
                         "none",
+
                       background:
                         "transparent",
+
                       color:
                         "#dce9ed",
+
                       fontSize:
                         10,
+
                       letterSpacing:
                         "0.07em",
                     }}
@@ -3648,11 +4220,16 @@ export default function Missions() {
                   style={{
                     display:
                       "flex",
-                    gap: 6,
+
+                    gap:
+                      6,
+
                     marginTop:
                       11,
+
                     overflowX:
                       "auto",
+
                     paddingBottom:
                       2,
                   }}
@@ -3679,26 +4256,34 @@ export default function Missions() {
                           style={{
                             flexShrink:
                               0,
+
                             padding:
                               "7px 10px",
+
                             border:
                               active
                                 ? "1px solid rgba(130,224,246,0.34)"
                                 : "1px solid rgba(255,255,255,0.06)",
+
                             background:
                               active
                                 ? "rgba(106,193,216,0.11)"
                                 : "rgba(255,255,255,0.018)",
+
                             color:
                               active
                                 ? "#d8f8ff"
                                 : "#5f6d76",
+
                             fontSize:
                               8,
+
                             letterSpacing:
                               "0.1em",
+
                             cursor:
                               "pointer",
+
                             borderRadius:
                               3,
                           }}
@@ -3717,11 +4302,16 @@ export default function Missions() {
                 style={{
                   padding:
                     12,
+
                   display:
                     "grid",
-                  gap: 10,
+
+                  gap:
+                    10,
+
                   maxHeight:
                     900,
+
                   overflowY:
                     "auto",
                 }}
@@ -3749,6 +4339,7 @@ export default function Missions() {
                           setMissionError(
                             ""
                           );
+
                           setSelectedMissionId(
                             value.id
                           );
@@ -3761,18 +4352,25 @@ export default function Missions() {
                     style={{
                       minHeight:
                         450,
+
                       display:
                         "grid",
+
                       placeItems:
                         "center",
+
                       padding:
                         35,
+
                       textAlign:
                         "center",
+
                       border:
                         "1px dashed rgba(255,255,255,0.075)",
+
                       background:
                         "radial-gradient(circle at center, rgba(90,176,199,0.045), transparent 58%)",
+
                       borderRadius:
                         4,
                     }}
@@ -3785,20 +4383,30 @@ export default function Missions() {
                     >
                       <div
                         style={{
-                          width: 70,
-                          height: 70,
+                          width:
+                            70,
+
+                          height:
+                            70,
+
                           margin:
                             "0 auto",
+
                           display:
                             "grid",
+
                           placeItems:
                             "center",
+
                           border:
                             "1px solid rgba(125,224,245,0.18)",
+
                           background:
                             "rgba(89,178,201,0.05)",
+
                           boxShadow:
                             "0 0 50px rgba(70,178,206,0.08)",
+
                           borderRadius:
                             5,
                         }}
@@ -3813,10 +4421,13 @@ export default function Missions() {
                         style={{
                           marginTop:
                             18,
+
                           color:
                             "#e1edf0",
+
                           fontSize:
                             15,
+
                           fontWeight:
                             700,
                         }}
@@ -3831,10 +4442,13 @@ export default function Missions() {
                         style={{
                           margin:
                             "9px auto 0",
+
                           color:
                             "#65737b",
+
                           fontSize:
                             10,
+
                           lineHeight:
                             1.7,
                         }}
@@ -3860,27 +4474,40 @@ export default function Missions() {
                           style={{
                             display:
                               "inline-flex",
+
                             alignItems:
                               "center",
-                            gap: 7,
+
+                            gap:
+                              7,
+
                             marginTop:
                               20,
+
                             padding:
                               "11px 14px",
+
                             border:
                               "1px solid rgba(132,226,249,0.34)",
+
                             background:
                               "rgba(95,184,211,0.10)",
+
                             color:
                               "#e0faff",
+
                             fontSize:
                               9,
+
                             fontWeight:
                               800,
+
                             letterSpacing:
                               "0.11em",
+
                             cursor:
                               "pointer",
+
                             borderRadius:
                               4,
                           }}
@@ -3897,6 +4524,7 @@ export default function Missions() {
               </div>
             </motion.section>
 
+            {/* RIGHT MISSION DETAIL */}
             <motion.section
               initial={{
                 opacity: 0,
@@ -3915,10 +4543,13 @@ export default function Missions() {
               style={{
                 border:
                   "1px solid rgba(255,255,255,0.075)",
+
                 background:
                   "rgba(7,10,13,0.84)",
+
                 borderRadius:
                   5,
+
                 overflow:
                   "hidden",
               }}
@@ -3928,12 +4559,16 @@ export default function Missions() {
                   style={{
                     minHeight:
                       760,
+
                     display:
                       "grid",
+
                     placeItems:
                       "center",
+
                     padding:
                       40,
+
                     textAlign:
                       "center",
                   }}
@@ -3946,20 +4581,30 @@ export default function Missions() {
                   >
                     <div
                       style={{
-                        width: 76,
-                        height: 76,
+                        width:
+                          76,
+
+                        height:
+                          76,
+
                         margin:
                           "0 auto",
+
                         display:
                           "grid",
+
                         placeItems:
                           "center",
+
                         border:
                           "1px solid rgba(126,226,246,0.18)",
+
                         background:
                           "radial-gradient(circle, rgba(87,182,205,0.09), rgba(255,255,255,0.01))",
+
                         boxShadow:
                           "0 0 60px rgba(81,188,212,0.08)",
+
                         borderRadius:
                           5,
                       }}
@@ -3974,10 +4619,13 @@ export default function Missions() {
                       style={{
                         marginTop:
                           21,
+
                         color:
                           "#e4eff2",
+
                         fontSize:
                           18,
+
                         fontWeight:
                           700,
                       }}
@@ -3989,10 +4637,13 @@ export default function Missions() {
                       style={{
                         margin:
                           "10px auto 0",
+
                         color:
                           "#65737b",
+
                         fontSize:
                           10,
+
                         lineHeight:
                           1.75,
                       }}
@@ -4010,6 +4661,7 @@ export default function Missions() {
                     style={{
                       padding:
                         "21px 22px 18px",
+
                       borderBottom:
                         "1px solid rgba(255,255,255,0.055)",
                     }}
@@ -4018,17 +4670,22 @@ export default function Missions() {
                       style={{
                         display:
                           "flex",
+
                         justifyContent:
                           "space-between",
+
                         alignItems:
                           "flex-start",
-                        gap: 20,
+
+                        gap:
+                          20,
                       }}
                     >
                       <div
                         style={{
                           minWidth:
                             0,
+
                           flex:
                             1,
                         }}
@@ -4037,9 +4694,13 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 11,
+
+                            gap:
+                              11,
+
                             flexWrap:
                               "wrap",
                           }}
@@ -4048,8 +4709,10 @@ export default function Missions() {
                             style={{
                               color:
                                 "#607079",
+
                               fontFamily:
                                 "monospace",
+
                               fontSize:
                                 9,
                             }}
@@ -4070,11 +4733,16 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 12,
+
+                            gap:
+                              12,
+
                             marginTop:
                               10,
+
                             flexWrap:
                               "wrap",
                           }}
@@ -4083,12 +4751,16 @@ export default function Missions() {
                             style={{
                               margin:
                                 0,
+
                               color:
                                 "#edf6f8",
+
                               fontSize:
                                 "clamp(24px, 3vw, 36px)",
+
                               lineHeight:
                                 1.08,
+
                               letterSpacing:
                                 "-0.025em",
                             }}
@@ -4110,28 +4782,40 @@ export default function Missions() {
                             style={{
                               display:
                                 "inline-flex",
+
                               alignItems:
                                 "center",
-                              gap: 7,
+
+                              gap:
+                                7,
+
                               padding:
                                 "8px 10px",
+
                               border:
                                 "1px solid rgba(255,255,255,0.08)",
+
                               background:
                                 "rgba(255,255,255,0.025)",
+
                               color:
                                 "#8b9aa1",
+
                               fontSize:
                                 8,
+
                               fontWeight:
                                 800,
+
                               letterSpacing:
                                 "0.09em",
+
                               cursor:
                                 selectedMission.status ===
                                 "RUNNING"
                                   ? "not-allowed"
                                   : "pointer",
+
                               borderRadius:
                                 4,
                             }}
@@ -4149,12 +4833,16 @@ export default function Missions() {
                           style={{
                             maxWidth:
                               820,
+
                             margin:
                               "10px 0 0",
+
                             color:
                               "#71808a",
+
                             fontSize:
                               11,
+
                             lineHeight:
                               1.7,
                           }}
@@ -4165,22 +4853,148 @@ export default function Missions() {
                         </p>
                       </div>
 
-                      <StatusBadge
-                        status={
-                          launchingMission
-                            ? "RUNNING"
-                            : selectedMission.status
-                        }
-                      />
+                      <div
+                        style={{
+                          display:
+                            "flex",
+
+                          alignItems:
+                            "center",
+
+                          gap:
+                            10,
+
+                          flexWrap:
+                            "wrap",
+
+                          justifyContent:
+                            "flex-end",
+                        }}
+                      >
+                        <StatusBadge
+                          status={
+                            launchingMission
+                              ? "RUNNING"
+                              : selectedMission.status
+                          }
+                        />
+
+                        {selectedMission.status ===
+                          "RUNNING" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              stopMission(
+                                selectedMission.id
+                              )
+                            }
+                            style={{
+                              display:
+                                "inline-flex",
+
+                              alignItems:
+                                "center",
+
+                              gap:
+                                7,
+
+                              padding:
+                                "8px 10px",
+
+                              border:
+                                "1px solid rgba(255,197,102,0.28)",
+
+                              background:
+                                "rgba(255,193,77,0.08)",
+
+                              color:
+                                "#ffd98d",
+
+                              fontSize:
+                                8,
+
+                              fontWeight:
+                                800,
+
+                              letterSpacing:
+                                "0.09em",
+
+                              cursor:
+                                "pointer",
+
+                              borderRadius:
+                                4,
+                            }}
+                          >
+                            <Pause
+                              size={12}
+                            />
+                            STOP
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={
+                            deleteMission
+                          }
+                          style={{
+                            display:
+                              "inline-flex",
+
+                            alignItems:
+                              "center",
+
+                            gap:
+                              7,
+
+                            padding:
+                              "8px 10px",
+
+                            border:
+                              "1px solid rgba(255,255,255,0.08)",
+
+                            background:
+                              "rgba(255,255,255,0.025)",
+
+                            color:
+                              "#eac0b2",
+
+                            fontSize:
+                              8,
+
+                            fontWeight:
+                              800,
+
+                            letterSpacing:
+                              "0.09em",
+
+                            cursor:
+                              "pointer",
+
+                            borderRadius:
+                              4,
+                          }}
+                        >
+                          <X
+                            size={12}
+                          />
+                          DELETE
+                        </button>
+                      </div>
                     </div>
 
                     <div
                       style={{
                         display:
                           "grid",
+
                         gridTemplateColumns:
                           "minmax(0, 1.3fr) minmax(150px, 0.7fr)",
-                        gap: 10,
+
+                        gap:
+                          10,
+
                         marginTop:
                           20,
                       }}
@@ -4189,10 +5003,13 @@ export default function Missions() {
                         style={{
                           padding:
                             "14px 15px",
+
                           border:
                             "1px solid rgba(124,220,241,0.11)",
+
                           background:
                             "rgba(77,162,185,0.035)",
+
                           borderRadius:
                             4,
                         }}
@@ -4201,8 +5018,10 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             justifyContent:
                               "space-between",
+
                             alignItems:
                               "center",
                           }}
@@ -4211,8 +5030,10 @@ export default function Missions() {
                             style={{
                               color:
                                 "#607079",
+
                               fontSize:
                                 8,
+
                               letterSpacing:
                                 "0.13em",
                             }}
@@ -4224,8 +5045,10 @@ export default function Missions() {
                             style={{
                               color:
                                 "#d9f9ff",
+
                               fontFamily:
                                 "monospace",
+
                               fontSize:
                                 16,
                             }}
@@ -4241,15 +5064,23 @@ export default function Missions() {
                           style={{
                             height:
                               5,
+
                             marginTop:
                               9,
+
                             background:
                               "rgba(255,255,255,0.06)",
                           }}
                         >
                           <motion.div
                             animate={{
-                              width: `${selectedMission.progress}%`,
+                              width: `${Math.min(
+                                100,
+                                Math.max(
+                                  0,
+                                  selectedMission.progress
+                                )
+                              )}%`,
                             }}
                             transition={{
                               duration:
@@ -4258,6 +5089,7 @@ export default function Missions() {
                             style={{
                               height:
                                 "100%",
+
                               background:
                                 "linear-gradient(90deg, #4b95aa, #a4ecff)",
                             }}
@@ -4269,10 +5101,13 @@ export default function Missions() {
                         style={{
                           padding:
                             "14px 15px",
+
                           border:
                             "1px solid rgba(255,255,255,0.07)",
+
                           background:
                             "rgba(255,255,255,0.017)",
+
                           borderRadius:
                             4,
                         }}
@@ -4281,8 +5116,10 @@ export default function Missions() {
                           style={{
                             color:
                               "#617079",
+
                             fontSize:
                               8,
+
                             letterSpacing:
                               "0.13em",
                           }}
@@ -4294,12 +5131,16 @@ export default function Missions() {
                           style={{
                             display:
                               "block",
+
                             marginTop:
                               8,
+
                             color:
                               "#e0f7fb",
+
                             fontFamily:
                               "monospace",
+
                             fontSize:
                               18,
                           }}
@@ -4314,11 +5155,16 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
+
                       gridTemplateColumns:
                         "repeat(4, minmax(0, 1fr))",
-                      gap: 8,
+
+                      gap:
+                        8,
+
                       padding:
                         "13px 18px",
+
                       borderBottom:
                         "1px solid rgba(255,255,255,0.055)",
                     }}
@@ -4362,9 +5208,12 @@ export default function Missions() {
                       }
                       label="LOCAL MODEL"
                       value={
-                        selectedMission.sovereignty
-                          ? "ACTIVE"
-                          : "--"
+                        hasVerifiedSovereignty
+                          ? "VERIFIED"
+                          : selectedMission.status ===
+                              "READY"
+                            ? "AWAITING RUN"
+                            : "--"
                       }
                     />
                   </div>
@@ -4373,8 +5222,10 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
+
                       gridTemplateColumns:
                         "minmax(0, 1fr) 280px",
+
                       borderBottom:
                         "1px solid rgba(255,255,255,0.055)",
                     }}
@@ -4383,6 +5234,7 @@ export default function Missions() {
                       style={{
                         padding:
                           "19px 20px",
+
                         borderRight:
                           "1px solid rgba(255,255,255,0.055)",
                       }}
@@ -4391,11 +5243,15 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           justifyContent:
                             "space-between",
+
                           alignItems:
                             "center",
-                          gap: 14,
+
+                          gap:
+                            14,
                         }}
                       >
                         <div>
@@ -4403,13 +5259,19 @@ export default function Missions() {
                             style={{
                               display:
                                 "flex",
+
                               alignItems:
                                 "center",
-                              gap: 8,
+
+                              gap:
+                                8,
+
                               color:
                                 "#66757e",
+
                               fontSize:
                                 9,
+
                               letterSpacing:
                                 "0.14em",
                             }}
@@ -4426,6 +5288,7 @@ export default function Missions() {
                             style={{
                               margin:
                                 "8px 0 0",
+
                               fontSize:
                                 15,
                             }}
@@ -4438,8 +5301,10 @@ export default function Missions() {
                           style={{
                             color:
                               "#65747d",
+
                             fontFamily:
                               "monospace",
+
                             fontSize:
                               8,
                           }}
@@ -4485,16 +5350,22 @@ export default function Missions() {
                             style={{
                               padding:
                                 "32px 16px",
+
                               textAlign:
                                 "center",
+
                               border:
                                 "1px dashed rgba(255,255,255,0.065)",
+
                               color:
                                 "#58666e",
+
                               fontSize:
                                 10,
+
                               lineHeight:
                                 1.65,
+
                               borderRadius:
                                 4,
                             }}
@@ -4517,13 +5388,19 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           alignItems:
                             "center",
-                          gap: 8,
+
+                          gap:
+                            8,
+
                           color:
                             "#66757e",
+
                           fontSize:
                             9,
+
                           letterSpacing:
                             "0.14em",
                         }}
@@ -4540,7 +5417,10 @@ export default function Missions() {
                         style={{
                           display:
                             "grid",
-                          gap: 14,
+
+                          gap:
+                            14,
+
                           marginTop:
                             18,
                         }}
@@ -4556,21 +5436,19 @@ export default function Missions() {
                           ],
                           [
                             "EXTERNAL AI",
-                            selectedMission.sovereignty
+                            runtimeSovereignty
                               ?.external_ai_calls !=
                               null
                               ? String(
-                                  selectedMission
-                                    .sovereignty
-                                    .external_ai_calls
+                                  runtimeSovereignty.external_ai_calls
                                 )
-                              : "--",
+                              : "NOT VERIFIED",
                           ],
                           [
                             "NETWORK",
-                            selectedMission.sovereignty
+                            runtimeSovereignty
                               ?.network_mode ||
-                              "--",
+                              "NOT VERIFIED",
                           ],
                         ].map(
                           ([label, value]) => (
@@ -4581,17 +5459,22 @@ export default function Missions() {
                               style={{
                                 display:
                                   "flex",
+
                                 justifyContent:
                                   "space-between",
+
                                 alignItems:
                                   "center",
-                                gap: 12,
+
+                                gap:
+                                  12,
                               }}
                             >
                               <span
                                 style={{
                                   color:
                                     "#5c6971",
+
                                   fontSize:
                                     9,
                                 }}
@@ -4605,10 +5488,13 @@ export default function Missions() {
                                 style={{
                                   color:
                                     "#b8eaf3",
+
                                   fontFamily:
                                     "monospace",
+
                                   fontSize:
                                     9,
+
                                   textAlign:
                                     "right",
                                 }}
@@ -4626,25 +5512,31 @@ export default function Missions() {
                         style={{
                           marginTop:
                             20,
+
                           padding:
                             "11px",
+
                           border:
                             "1px solid rgba(117,218,239,0.1)",
+
                           background:
                             "rgba(72,151,174,0.03)",
+
                           color:
                             "#71838a",
+
                           fontSize:
                             8,
+
                           lineHeight:
                             1.6,
+
                           borderRadius:
                             4,
                         }}
                       >
-                        Runtime telemetry is limited to
-                        information actually returned by
-                        NOVA.
+                        Runtime telemetry shows only values
+                        returned by the NOVA mission runtime.
                       </div>
                     </div>
                   </div>
@@ -4653,8 +5545,10 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
+
                       gridTemplateColumns:
                         "1fr 1fr",
+
                       borderBottom:
                         "1px solid rgba(255,255,255,0.055)",
                     }}
@@ -4663,6 +5557,7 @@ export default function Missions() {
                       style={{
                         padding:
                           "19px 20px",
+
                         borderRight:
                           "1px solid rgba(255,255,255,0.055)",
                       }}
@@ -4671,13 +5566,19 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           alignItems:
                             "center",
-                          gap: 8,
+
+                          gap:
+                            8,
+
                           color:
                             "#66757e",
+
                           fontSize:
                             9,
+
                           letterSpacing:
                             "0.14em",
                         }}
@@ -4694,6 +5595,7 @@ export default function Missions() {
                         style={{
                           margin:
                             "8px 0 0",
+
                           fontSize:
                             15,
                         }}
@@ -4713,7 +5615,9 @@ export default function Missions() {
                             style={{
                               display:
                                 "grid",
-                              gap: 7,
+
+                              gap:
+                                7,
                             }}
                           >
                             {selectedMission.attachments.map(
@@ -4727,15 +5631,22 @@ export default function Missions() {
                                   style={{
                                     display:
                                       "flex",
+
                                     alignItems:
                                       "center",
-                                    gap: 10,
+
+                                    gap:
+                                      10,
+
                                     padding:
                                       "9px 10px",
+
                                     border:
                                       "1px solid rgba(255,255,255,0.055)",
+
                                     background:
                                       "rgba(255,255,255,0.016)",
+
                                     borderRadius:
                                       4,
                                   }}
@@ -4744,18 +5655,25 @@ export default function Missions() {
                                     style={{
                                       width:
                                         30,
+
                                       height:
                                         30,
+
                                       display:
                                         "grid",
+
                                       placeItems:
                                         "center",
+
                                       flexShrink:
                                         0,
+
                                       border:
                                         "1px solid rgba(125,224,245,0.12)",
+
                                       background:
                                         "rgba(89,178,201,0.04)",
+
                                       color:
                                         "#84ddec",
                                     }}
@@ -4769,6 +5687,7 @@ export default function Missions() {
                                     style={{
                                       minWidth:
                                         0,
+
                                       flex:
                                         1,
                                     }}
@@ -4777,12 +5696,16 @@ export default function Missions() {
                                       style={{
                                         overflow:
                                           "hidden",
+
                                         textOverflow:
                                           "ellipsis",
+
                                         whiteSpace:
                                           "nowrap",
+
                                         color:
                                           "#b8d6dc",
+
                                         fontSize:
                                           9,
                                       }}
@@ -4796,10 +5719,13 @@ export default function Missions() {
                                       style={{
                                         marginTop:
                                           3,
+
                                         color:
                                           "#56656d",
+
                                         fontFamily:
                                           "monospace",
+
                                         fontSize:
                                           7,
                                       }}
@@ -4826,14 +5752,19 @@ export default function Missions() {
                             style={{
                               padding:
                                 "24px 12px",
+
                               border:
                                 "1px dashed rgba(255,255,255,0.06)",
+
                               color:
                                 "#58666e",
+
                               fontSize:
                                 9,
+
                               textAlign:
                                 "center",
+
                               lineHeight:
                                 1.65,
                             }}
@@ -4855,13 +5786,19 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           alignItems:
                             "center",
-                          gap: 8,
+
+                          gap:
+                            8,
+
                           color:
                             "#66757e",
+
                           fontSize:
                             9,
+
                           letterSpacing:
                             "0.14em",
                         }}
@@ -4878,6 +5815,7 @@ export default function Missions() {
                         style={{
                           margin:
                             "8px 0 0",
+
                           fontSize:
                             15,
                         }}
@@ -4897,7 +5835,9 @@ export default function Missions() {
                             style={{
                               display:
                                 "grid",
-                              gap: 8,
+
+                              gap:
+                                8,
                             }}
                           >
                             {selectedMission.artifacts.map(
@@ -4930,15 +5870,22 @@ export default function Missions() {
                                     style={{
                                       display:
                                         "flex",
+
                                       alignItems:
                                         "center",
-                                      gap: 10,
+
+                                      gap:
+                                        10,
+
                                       padding:
                                         "10px",
+
                                       border:
                                         "1px solid rgba(117,220,239,0.09)",
+
                                       background:
                                         "rgba(76,158,180,0.03)",
+
                                       borderRadius:
                                         4,
                                     }}
@@ -4954,6 +5901,7 @@ export default function Missions() {
                                       style={{
                                         minWidth:
                                           0,
+
                                         flex:
                                           1,
                                       }}
@@ -4962,12 +5910,16 @@ export default function Missions() {
                                         style={{
                                           overflow:
                                             "hidden",
+
                                           textOverflow:
                                             "ellipsis",
+
                                           whiteSpace:
                                             "nowrap",
+
                                           color:
                                             "#b9dde5",
+
                                           fontSize:
                                             9,
                                         }}
@@ -4981,10 +5933,13 @@ export default function Missions() {
                                         style={{
                                           marginTop:
                                             3,
+
                                           color:
                                             "#596971",
+
                                           fontFamily:
                                             "monospace",
+
                                           fontSize:
                                             7,
                                         }}
@@ -4996,6 +5951,30 @@ export default function Missions() {
                                         {formatArtifactSize(
                                           artifact.sizeBytes
                                         )}
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          marginTop:
+                                            4,
+
+                                          color:
+                                            "#80d9e7",
+
+                                          fontSize:
+                                            7,
+
+                                          fontFamily:
+                                            "monospace",
+
+                                          letterSpacing:
+                                            "0.06em",
+                                        }}
+                                      >
+                                        VERIFY:{" "}
+                                        {
+                                          artifact.verification
+                                        }
                                       </div>
                                     </div>
 
@@ -5012,25 +5991,37 @@ export default function Missions() {
                                           style={{
                                             display:
                                               "inline-flex",
+
                                             alignItems:
                                               "center",
-                                            gap: 5,
+
+                                            gap:
+                                              5,
+
                                             padding:
                                               "7px 8px",
+
                                             border:
                                               "1px solid rgba(132,226,249,0.18)",
+
                                             background:
                                               "rgba(95,184,211,0.05)",
+
                                             color:
                                               "#9feaf7",
+
                                             fontSize:
                                               7,
+
                                             fontWeight:
                                               800,
+
                                             letterSpacing:
                                               "0.08em",
+
                                             textDecoration:
                                               "none",
+
                                             borderRadius:
                                               4,
                                           }}
@@ -5053,14 +6044,19 @@ export default function Missions() {
                             style={{
                               padding:
                                 "24px 12px",
+
                               border:
                                 "1px dashed rgba(255,255,255,0.06)",
+
                               color:
                                 "#58666e",
+
                               fontSize:
                                 9,
+
                               textAlign:
                                 "center",
+
                               lineHeight:
                                 1.65,
                             }}
@@ -5078,8 +6074,10 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
+
                       gridTemplateColumns:
                         "1fr 1fr",
+
                       borderBottom:
                         "1px solid rgba(255,255,255,0.055)",
                     }}
@@ -5088,6 +6086,7 @@ export default function Missions() {
                       style={{
                         padding:
                           "19px 20px",
+
                         borderRight:
                           "1px solid rgba(255,255,255,0.055)",
                       }}
@@ -5096,13 +6095,19 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           alignItems:
                             "center",
-                          gap: 8,
+
+                          gap:
+                            8,
+
                           color:
                             "#66757e",
+
                           fontSize:
                             9,
+
                           letterSpacing:
                             "0.14em",
                         }}
@@ -5119,7 +6124,10 @@ export default function Missions() {
                         style={{
                           display:
                             "grid",
-                          gap: 11,
+
+                          gap:
+                            11,
+
                           marginTop:
                             15,
                         }}
@@ -5127,38 +6135,35 @@ export default function Missions() {
                         {[
                           [
                             "Execution mode",
-                            selectedMission
-                              .sovereignty
+                            runtimeSovereignty
                               ?.execution_mode ||
-                              "NOT RUN",
+                              "NOT VERIFIED",
                           ],
                           [
                             "Network mode",
-                            selectedMission
-                              .sovereignty
+                            runtimeSovereignty
                               ?.network_mode ||
-                              "NOT RUN",
+                              "NOT VERIFIED",
                           ],
                           [
                             "External AI calls",
-                            selectedMission
-                              .sovereignty
+                            runtimeSovereignty
                               ?.external_ai_calls !=
                               null
                               ? String(
-                                  selectedMission
-                                    .sovereignty
-                                    .external_ai_calls
+                                  runtimeSovereignty.external_ai_calls
                                 )
-                              : "NOT RUN",
+                              : "NOT VERIFIED",
                           ],
                           [
                             "Local reasoning",
-                            selectedMission
-                              .sovereignty
-                              ?.local_reasoning
-                              ? "YES"
-                              : "NOT RUN",
+                            runtimeSovereignty
+                              ?.local_reasoning !=
+                              null
+                              ? runtimeSovereignty.local_reasoning
+                                ? "YES"
+                                : "NO"
+                              : "NOT VERIFIED",
                           ],
                         ].map(
                           ([label, value]) => (
@@ -5169,15 +6174,19 @@ export default function Missions() {
                               style={{
                                 display:
                                   "flex",
+
                                 justifyContent:
                                   "space-between",
-                                gap: 14,
+
+                                gap:
+                                  14,
                               }}
                             >
                               <span
                                 style={{
                                   color:
                                     "#5f6d75",
+
                                   fontSize:
                                     9,
                                 }}
@@ -5191,10 +6200,13 @@ export default function Missions() {
                                 style={{
                                   color:
                                     "#b6e8f1",
+
                                   fontFamily:
                                     "monospace",
+
                                   fontSize:
                                     9,
+
                                   textAlign:
                                     "right",
                                 }}
@@ -5219,13 +6231,19 @@ export default function Missions() {
                         style={{
                           display:
                             "flex",
+
                           alignItems:
                             "center",
-                          gap: 8,
+
+                          gap:
+                            8,
+
                           color:
                             "#66757e",
+
                           fontSize:
                             9,
+
                           letterSpacing:
                             "0.14em",
                         }}
@@ -5242,7 +6260,10 @@ export default function Missions() {
                         style={{
                           display:
                             "grid",
-                          gap: 11,
+
+                          gap:
+                            11,
+
                           marginTop:
                             15,
                         }}
@@ -5251,15 +6272,19 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             justifyContent:
                               "space-between",
-                            gap: 14,
+
+                            gap:
+                              14,
                           }}
                         >
                           <span
                             style={{
                               color:
                                 "#5f6d75",
+
                               fontSize:
                                 9,
                             }}
@@ -5271,6 +6296,7 @@ export default function Missions() {
                             style={{
                               color:
                                 "#b8e8f1",
+
                               fontSize:
                                 9,
                             }}
@@ -5285,15 +6311,19 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             justifyContent:
                               "space-between",
-                            gap: 14,
+
+                            gap:
+                              14,
                           }}
                         >
                           <span
                             style={{
                               color:
                                 "#5f6d75",
+
                               fontSize:
                                 9,
                             }}
@@ -5305,8 +6335,10 @@ export default function Missions() {
                             style={{
                               color:
                                 "#b8e8f1",
+
                               fontSize:
                                 9,
+
                               textAlign:
                                 "right",
                             }}
@@ -5321,32 +6353,36 @@ export default function Missions() {
                           style={{
                             marginTop:
                               3,
+
                             padding:
                               "11px 12px",
+
                             border:
                               "1px solid rgba(117,218,239,0.09)",
+
                             background:
                               "rgba(71,149,171,0.028)",
+
                             color:
                               "#6d8088",
+
                             fontSize:
                               8,
+
                             lineHeight:
                               1.6,
                           }}
                         >
-                          Editing mission inputs resets the
-                          current execution state so NOVA
-                          never displays results for outdated
+                          Editing mission inputs clears the
+                          previous runtime state so NOVA never
+                          displays results against outdated
                           mission data.
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* =====================================================
-                      MISSION CONVERSATION
-                  ====================================================== */}
+                  {/* MISSION CONVERSATION */}
                   <div
                     style={{
                       borderBottom:
@@ -5357,13 +6393,18 @@ export default function Missions() {
                       style={{
                         padding:
                           "19px 20px 13px",
+
                         display:
                           "flex",
+
                         justifyContent:
                           "space-between",
+
                         alignItems:
                           "center",
-                        gap: 14,
+
+                        gap:
+                          14,
                       }}
                     >
                       <div>
@@ -5371,13 +6412,19 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 8,
+
+                            gap:
+                              8,
+
                             color:
                               "#66757e",
+
                             fontSize:
                               9,
+
                             letterSpacing:
                               "0.14em",
                           }}
@@ -5394,6 +6441,7 @@ export default function Missions() {
                           style={{
                             margin:
                               "8px 0 0",
+
                             fontSize:
                               16,
                           }}
@@ -5406,8 +6454,10 @@ export default function Missions() {
                         style={{
                           color:
                             "#64747c",
+
                           fontFamily:
                             "monospace",
+
                           fontSize:
                             8,
                         }}
@@ -5422,18 +6472,25 @@ export default function Missions() {
                       style={{
                         margin:
                           "0 20px 16px",
+
                         minHeight:
                           330,
+
                         maxHeight:
                           460,
+
                         overflowY:
                           "auto",
+
                         padding:
                           "14px",
+
                         border:
                           "1px solid rgba(255,255,255,0.055)",
+
                         background:
                           "rgba(2,5,7,0.65)",
+
                         borderRadius:
                           5,
                       }}
@@ -5443,12 +6500,16 @@ export default function Missions() {
                           style={{
                             minHeight:
                               290,
+
                             display:
                               "grid",
+
                             placeItems:
                               "center",
+
                             textAlign:
                               "center",
+
                             padding:
                               25,
                           }}
@@ -5470,10 +6531,13 @@ export default function Missions() {
                               style={{
                                 marginTop:
                                   15,
+
                                 color:
                                   "#dcebef",
+
                                 fontSize:
                                   14,
+
                                 fontWeight:
                                   700,
                               }}
@@ -5485,18 +6549,21 @@ export default function Missions() {
                               style={{
                                 margin:
                                   "8px 0 0",
+
                                 color:
                                   "#65737b",
+
                                 fontSize:
                                   9,
+
                                 lineHeight:
                                   1.7,
                               }}
                             >
-                              Run the mission once. NOVA will
-                              then preserve the mission session
-                              so you can continue asking questions
-                              and requesting follow-up work.
+                              Run this mission once. NOVA
+                              will preserve the returned mission
+                              session for follow-up questions
+                              and controlled work.
                             </p>
                           </div>
                         </div>
@@ -5505,16 +6572,22 @@ export default function Missions() {
                           style={{
                             minHeight:
                               290,
+
                             display:
                               "grid",
+
                             placeItems:
                               "center",
+
                             color:
                               "#6d7c84",
+
                             fontFamily:
                               "monospace",
+
                             fontSize:
                               9,
+
                             letterSpacing:
                               "0.10em",
                           }}
@@ -5526,6 +6599,7 @@ export default function Missions() {
                             style={{
                               marginBottom:
                                 10,
+
                               animation:
                                 "spin 1s linear infinite",
                             }}
@@ -5540,20 +6614,63 @@ export default function Missions() {
                               style={{
                                 minHeight:
                                   280,
+
                                 display:
                                   "grid",
+
                                 placeItems:
                                   "center",
+
                                 textAlign:
                                   "center",
+
                                 color:
                                   "#67757c",
+
                                 fontSize:
                                   10,
                               }}
                             >
-                              Your mission conversation will
-                              appear here.
+                              {selectedMission.response ? (
+                                <div
+                                  style={{
+                                    width:
+                                      "100%",
+
+                                    textAlign:
+                                      "left",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      color:
+                                        "#65747c",
+
+                                      fontFamily:
+                                        "monospace",
+
+                                      fontSize:
+                                        7,
+
+                                      letterSpacing:
+                                        "0.10em",
+
+                                      marginBottom:
+                                        9,
+                                    }}
+                                  >
+                                    MISSION RESULT
+                                  </div>
+
+                                  <MissionMarkdown
+                                    content={
+                                      selectedMission.response
+                                    }
+                                  />
+                                </div>
+                              ) : (
+                                "Your mission conversation will appear here."
+                              )}
                             </div>
                           ) : (
                             missionChatMessages.map(
@@ -5567,10 +6684,13 @@ export default function Missions() {
                                   style={{
                                     marginBottom:
                                       14,
+
                                     display:
                                       "flex",
+
                                     flexDirection:
                                       "column",
+
                                     alignItems:
                                       message.role ===
                                       "user"
@@ -5582,17 +6702,25 @@ export default function Missions() {
                                     style={{
                                       display:
                                         "flex",
+
                                       alignItems:
                                         "center",
-                                      gap: 7,
+
+                                      gap:
+                                        7,
+
                                       marginBottom:
                                         5,
+
                                       color:
                                         "#5d6d75",
+
                                       fontFamily:
                                         "monospace",
+
                                       fontSize:
                                         7,
+
                                       letterSpacing:
                                         "0.09em",
                                     }}
@@ -5624,18 +6752,22 @@ export default function Missions() {
                                     style={{
                                       maxWidth:
                                         "88%",
+
                                       padding:
                                         "11px 13px",
+
                                       border:
                                         message.role ===
                                         "user"
                                           ? "1px solid rgba(128,224,246,0.22)"
                                           : "1px solid rgba(255,255,255,0.065)",
+
                                       background:
                                         message.role ===
                                         "user"
                                           ? "rgba(88,183,210,0.08)"
                                           : "rgba(255,255,255,0.022)",
+
                                       borderRadius:
                                         5,
                                     }}
@@ -5652,10 +6784,13 @@ export default function Missions() {
                                         style={{
                                           color:
                                             "#d9eaee",
+
                                           fontSize:
                                             10,
+
                                           lineHeight:
                                             1.65,
+
                                           whiteSpace:
                                             "pre-wrap",
                                         }}
@@ -5676,15 +6811,22 @@ export default function Missions() {
                               style={{
                                 display:
                                   "flex",
+
                                 alignItems:
                                   "center",
-                                gap: 8,
+
+                                gap:
+                                  8,
+
                                 color:
                                   "#7f9299",
+
                                 fontFamily:
                                   "monospace",
+
                                 fontSize:
                                   8,
+
                                 letterSpacing:
                                   "0.09em",
                               }}
@@ -5716,18 +6858,25 @@ export default function Missions() {
                         style={{
                           margin:
                             "0 20px 10px",
+
                           padding:
                             "10px 12px",
+
                           border:
                             "1px solid rgba(239,184,167,0.20)",
+
                           background:
                             "rgba(120,52,39,0.06)",
+
                           color:
                             "#c99d91",
+
                           fontSize:
                             9,
+
                           lineHeight:
                             1.5,
+
                           borderRadius:
                             4,
                         }}
@@ -5742,17 +6891,25 @@ export default function Missions() {
                       style={{
                         margin:
                           "0 20px 19px",
+
                         display:
                           "flex",
+
                         alignItems:
                           "flex-end",
-                        gap: 8,
+
+                        gap:
+                          8,
+
                         padding:
                           "10px 10px 10px 12px",
+
                         border:
                           "1px solid rgba(255,255,255,0.075)",
+
                         background:
                           "rgba(255,255,255,0.018)",
+
                         borderRadius:
                           5,
                       }}
@@ -5775,9 +6932,7 @@ export default function Missions() {
                           !selectedMission.conversationId ||
                           sendingMissionChat
                         }
-                        rows={
-                          2
-                        }
+                        rows={2}
                         placeholder={
                           selectedMission.conversationId
                             ? "Ask NOVA about the mission, evidence, conclusion or request another controlled task..."
@@ -5786,24 +6941,34 @@ export default function Missions() {
                         style={{
                           flex:
                             1,
+
                           minHeight:
                             46,
+
                           maxHeight:
                             130,
+
                           resize:
                             "vertical",
+
                           border:
                             "none",
+
                           outline:
                             "none",
+
                           background:
                             "transparent",
+
                           color:
                             "#d9e8ec",
+
                           fontFamily:
                             "inherit",
+
                           fontSize:
                             10,
+
                           lineHeight:
                             1.6,
                         }}
@@ -5822,33 +6987,42 @@ export default function Missions() {
                         style={{
                           width:
                             38,
+
                           height:
                             38,
+
                           display:
                             "grid",
+
                           placeItems:
                             "center",
+
                           flexShrink:
                             0,
+
                           border:
                             "1px solid rgba(130,226,247,0.26)",
+
                           background:
                             !selectedMission.conversationId ||
                             !missionChatInput.trim() ||
                             sendingMissionChat
                               ? "rgba(255,255,255,0.025)"
                               : "rgba(95,184,211,0.10)",
+
                           color:
                             !selectedMission.conversationId ||
                             !missionChatInput.trim()
                               ? "#55636b"
                               : "#dffaff",
+
                           cursor:
                             !selectedMission.conversationId ||
                             !missionChatInput.trim() ||
                             sendingMissionChat
                               ? "not-allowed"
                               : "pointer",
+
                           borderRadius:
                             4,
                         }}
@@ -5878,15 +7052,22 @@ export default function Missions() {
                     style={{
                       display:
                         "flex",
+
                       justifyContent:
                         "space-between",
+
                       alignItems:
                         "center",
-                      gap: 15,
+
+                      gap:
+                        15,
+
                       padding:
                         "15px 20px",
+
                       flexWrap:
                         "wrap",
+
                       background:
                         "rgba(255,255,255,0.012)",
                     }}
@@ -5895,13 +7076,19 @@ export default function Missions() {
                       style={{
                         display:
                           "flex",
+
                         alignItems:
                           "center",
-                        gap: 8,
+
+                        gap:
+                          8,
+
                         color:
                           "#64737a",
+
                         fontSize:
                           9,
+
                         letterSpacing:
                           "0.08em",
                       }}
@@ -5918,58 +7105,26 @@ export default function Missions() {
                             "COMPLETED"
                           ? "REAL BACKEND RESULT RECEIVED"
                           : selectedMission.status ===
-                              "FAILED"
-                            ? "MISSION EXECUTION FAILED"
-                            : "MISSION READY"}
+                              "STOPPED"
+                            ? "MISSION STOPPED"
+                            : selectedMission.status ===
+                                "FAILED"
+                              ? "MISSION EXECUTION FAILED"
+                              : "MISSION READY"}
                     </div>
 
                     <div
                       style={{
                         display:
                           "flex",
-                        gap: 8,
+
+                        gap:
+                          8,
+
                         flexWrap:
                           "wrap",
                       }}
                     >
-                      {selectedMission.status ===
-                        "RUNNING" && (
-                        <button
-                          type="button"
-                          onClick={
-                            togglePauseDisplay
-                          }
-                          style={{
-                            display:
-                              "inline-flex",
-                            alignItems:
-                              "center",
-                            gap: 7,
-                            padding:
-                              "10px 13px",
-                            border:
-                              "1px solid rgba(255,255,255,0.08)",
-                            background:
-                              "rgba(255,255,255,0.02)",
-                            color:
-                              "#98a7ae",
-                            fontSize:
-                              9,
-                            cursor:
-                              "pointer",
-                            borderRadius:
-                              4,
-                          }}
-                        >
-                          <Pause
-                            size={
-                              13
-                            }
-                          />
-                          PAUSE
-                        </button>
-                      )}
-
                       {selectedMission.status ===
                         "COMPLETED" && (
                         <button
@@ -5980,21 +7135,31 @@ export default function Missions() {
                           style={{
                             display:
                               "inline-flex",
+
                             alignItems:
                               "center",
-                            gap: 7,
+
+                            gap:
+                              7,
+
                             padding:
                               "10px 13px",
+
                             border:
                               "1px solid rgba(255,255,255,0.08)",
+
                             background:
                               "rgba(255,255,255,0.02)",
+
                             color:
                               "#9eabb1",
+
                             fontSize:
                               9,
+
                             cursor:
                               "pointer",
+
                             borderRadius:
                               4,
                           }}
@@ -6004,7 +7169,7 @@ export default function Missions() {
                               13
                             }
                           />
-                          RESET RUN
+                          CLEAR RUN STATE
                         </button>
                       )}
 
@@ -6019,31 +7184,43 @@ export default function Missions() {
                         style={{
                           display:
                             "inline-flex",
+
                           alignItems:
                             "center",
-                          gap: 7,
+
+                          gap:
+                            7,
+
                           padding:
                             "10px 15px",
+
                           border:
                             "1px solid rgba(132,226,249,0.42)",
+
                           background:
                             !canLaunch
                               ? "rgba(255,255,255,0.025)"
                               : "#102026",
+
                           color:
                             !canLaunch
                               ? "#55636b"
                               : "#e9fbff",
+
                           fontSize:
                             9,
+
                           fontWeight:
                             800,
+
                           letterSpacing:
                             "0.10em",
+
                           cursor:
                             !canLaunch
                               ? "not-allowed"
                               : "pointer",
+
                           borderRadius:
                             4,
                         }}
@@ -6071,7 +7248,10 @@ export default function Missions() {
                           : selectedMission.status ===
                               "COMPLETED"
                             ? "RUN AGAIN"
-                            : "LAUNCH MISSION"}
+                            : selectedMission.status ===
+                                "STOPPED"
+                              ? "RUN AGAIN"
+                              : "LAUNCH MISSION"}
                       </button>
                     </div>
                   </div>
@@ -6084,9 +7264,13 @@ export default function Missions() {
             style={{
               display:
                 "grid",
+
               gridTemplateColumns:
                 "repeat(3, minmax(0, 1fr))",
-              gap: 11,
+
+              gap:
+                11,
+
               marginTop:
                 16,
             }}
@@ -6109,10 +7293,13 @@ export default function Missions() {
               style={{
                 padding:
                   "18px 19px",
+
                 border:
                   "1px solid rgba(255,255,255,0.06)",
+
                 background:
                   "rgba(8,11,14,0.64)",
+
                 borderRadius:
                   4,
               }}
@@ -6121,13 +7308,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 8,
+
+                  gap:
+                    8,
+
                   color:
                     "#66757f",
+
                   fontSize:
                     9,
+
                   letterSpacing:
                     "0.14em",
                 }}
@@ -6144,36 +7337,42 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     11,
+
                   color:
                     "#d7edf1",
+
                   fontSize:
                     14,
                 }}
               >
-                {selectedMission?.sovereignty
-                  ?.external_ai_calls ===
+                {runtimeSovereignty?.external_ai_calls ===
                 0
                   ? "0 EXTERNAL AI CALLS"
-                  : "SOVEREIGN BY DESIGN"}
+                  : hasVerifiedSovereignty
+                    ? "RUNTIME VERIFIED"
+                    : "AWAITING RUNTIME"}
               </strong>
 
               <p
                 style={{
                   margin:
                     "8px 0 0",
+
                   color:
                     "#65737b",
+
                   fontSize:
                     9,
+
                   lineHeight:
                     1.6,
                 }}
               >
-                Runtime sovereignty values become visible
-                after NOVA returns a real mission execution
-                response.
+                Sovereignty claims are shown only from
+                mission runtime data returned by NOVA.
               </p>
             </motion.div>
 
@@ -6195,10 +7394,13 @@ export default function Missions() {
               style={{
                 padding:
                   "18px 19px",
+
                 border:
                   "1px solid rgba(255,255,255,0.06)",
+
                 background:
                   "rgba(8,11,14,0.64)",
+
                 borderRadius:
                   4,
               }}
@@ -6207,13 +7409,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 8,
+
+                  gap:
+                    8,
+
                   color:
                     "#66757f",
+
                   fontSize:
                     9,
+
                   letterSpacing:
                     "0.14em",
                 }}
@@ -6230,31 +7438,38 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     11,
+
                   color:
                     "#d7edf1",
+
                   fontSize:
                     14,
                 }}
               >
-                CONTROLLED AUTONOMY
+                {selectedMission?.autonomy ||
+                  "NOT CONFIGURED"}
               </strong>
 
               <p
                 style={{
                   margin:
                     "8px 0 0",
+
                   color:
                     "#65737b",
+
                   fontSize:
                     9,
+
                   lineHeight:
                     1.6,
                 }}
               >
-                Each mission stores the autonomy policy you
-                selected before execution.
+                This policy comes directly from the mission
+                definition created in Mission Control.
               </p>
             </motion.div>
 
@@ -6276,10 +7491,13 @@ export default function Missions() {
               style={{
                 padding:
                   "18px 19px",
+
                 border:
                   "1px solid rgba(255,255,255,0.06)",
+
                 background:
                   "rgba(8,11,14,0.64)",
+
                 borderRadius:
                   4,
               }}
@@ -6288,13 +7506,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 8,
+
+                  gap:
+                    8,
+
                   color:
                     "#66757f",
+
                   fontSize:
                     9,
+
                   letterSpacing:
                     "0.14em",
                 }}
@@ -6311,33 +7535,41 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     11,
+
                   color:
                     "#d7edf1",
+
                   fontSize:
                     14,
                 }}
               >
                 {selectedMission?.conversationId
                   ? "PERSISTENT MISSION SESSION"
-                  : "REAL EXECUTION EVIDENCE"}
+                  : selectedMission?.response
+                    ? "REAL EXECUTION RESULT"
+                    : "AWAITING EXECUTION"}
               </strong>
 
               <p
                 style={{
                   margin:
                     "8px 0 0",
+
                   color:
                     "#65737b",
+
                   fontSize:
                     9,
+
                   lineHeight:
                     1.6,
                 }}
               >
-                Mission results and follow-up conversation
-                remain tied to the same NOVA session.
+                Mission state is tied to the actual evidence
+                package, runtime result and returned session.
               </p>
             </motion.div>
           </div>
@@ -6360,12 +7592,16 @@ export default function Missions() {
             style={{
               marginTop:
                 16,
+
               padding:
                 "16px 19px",
+
               border:
                 "1px solid rgba(255,255,255,0.06)",
+
               background:
                 "rgba(8,11,14,0.62)",
+
               borderRadius:
                 4,
             }}
@@ -6374,11 +7610,16 @@ export default function Missions() {
               style={{
                 display:
                   "flex",
+
                 justifyContent:
                   "space-between",
+
                 alignItems:
                   "center",
-                gap: 15,
+
+                gap:
+                  15,
+
                 flexWrap:
                   "wrap",
               }}
@@ -6387,9 +7628,12 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 9,
+
+                  gap:
+                    9,
                 }}
               >
                 <ServerCog
@@ -6402,8 +7646,10 @@ export default function Missions() {
                     style={{
                       color:
                         "#66757f",
+
                       fontSize:
                         8,
+
                       letterSpacing:
                         "0.14em",
                     }}
@@ -6415,10 +7661,13 @@ export default function Missions() {
                     style={{
                       display:
                         "block",
+
                       marginTop:
                         4,
+
                       color:
                         "#dcecef",
+
                       fontSize:
                         12,
                     }}
@@ -6432,13 +7681,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   alignItems:
                     "center",
-                  gap: 15,
+
+                  gap:
+                    15,
+
                   color:
                     "#596871",
+
                   fontFamily:
                     "monospace",
+
                   fontSize:
                     8,
                 }}
@@ -6468,7 +7723,10 @@ export default function Missions() {
               style={{
                 marginTop:
                   12,
-                height: 1,
+
+                height:
+                  1,
+
                 background:
                   "linear-gradient(90deg, rgba(128,223,244,0.2), rgba(255,255,255,0.03), transparent)",
               }}
@@ -6478,13 +7736,15 @@ export default function Missions() {
               style={{
                 marginTop:
                   10,
+
                 color:
                   "#596871",
+
                 fontSize:
                   8,
               }}
             >
-              MISSION STATE SYNCHRONIZED LOCALLY
+              MISSION STATE STORED LOCALLY
             </div>
           </motion.section>
         </div>
@@ -6504,17 +7764,24 @@ export default function Missions() {
           style={{
             position:
               "fixed",
+
             inset: 0,
+
             zIndex:
               120,
+
             display:
               "grid",
+
             placeItems:
               "center",
+
             padding:
               24,
+
             background:
               "rgba(0,0,0,0.78)",
+
             backdropFilter:
               "blur(13px)",
           }}
@@ -6534,16 +7801,22 @@ export default function Missions() {
             style={{
               width:
                 "min(920px, 100%)",
+
               maxHeight:
                 "calc(100vh - 48px)",
+
               overflowY:
                 "auto",
+
               border:
                 "1px solid rgba(127,225,246,0.19)",
+
               background:
                 "#080b0e",
+
               boxShadow:
                 "0 40px 120px rgba(0,0,0,0.70)",
+
               borderRadius:
                 6,
             }}
@@ -6552,13 +7825,19 @@ export default function Missions() {
               style={{
                 display:
                   "flex",
+
                 justifyContent:
                   "space-between",
+
                 alignItems:
                   "center",
-                gap: 18,
+
+                gap:
+                  18,
+
                 padding:
                   "21px 22px",
+
                 borderBottom:
                   "1px solid rgba(255,255,255,0.06)",
               }}
@@ -6568,8 +7847,10 @@ export default function Missions() {
                   style={{
                     color:
                       "#687780",
+
                     fontSize:
                       9,
+
                     letterSpacing:
                       "0.17em",
                   }}
@@ -6581,8 +7862,10 @@ export default function Missions() {
                   style={{
                     margin:
                       "8px 0 0",
+
                     color:
                       "#eaf4f7",
+
                     fontSize:
                       23,
                   }}
@@ -6598,27 +7881,33 @@ export default function Missions() {
                   setShowNewMission(
                     false
                   );
-                  setMissionError(
-                    ""
-                  );
+                  setMissionError("");
                 }}
                 style={{
                   width:
                     36,
+
                   height:
                     36,
+
                   display:
                     "grid",
+
                   placeItems:
                     "center",
+
                   border:
                     "1px solid rgba(255,255,255,0.07)",
+
                   background:
                     "rgba(255,255,255,0.025)",
+
                   color:
                     "#7d8a91",
+
                   cursor:
                     "pointer",
+
                   borderRadius:
                     4,
                 }}
@@ -6641,10 +7930,13 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   color:
                     "#687780",
+
                   fontSize:
                     9,
+
                   letterSpacing:
                     "0.13em",
                 }}
@@ -6656,9 +7948,13 @@ export default function Missions() {
                 style={{
                   display:
                     "grid",
+
                   gridTemplateColumns:
                     "repeat(2, minmax(0,1fr))",
-                  gap: 9,
+
+                  gap:
+                    9,
+
                   marginTop:
                     10,
                 }}
@@ -6685,22 +7981,29 @@ export default function Missions() {
                         style={{
                           minHeight:
                             94,
+
                           padding:
                             "13px 14px",
+
                           textAlign:
                             "left",
+
                           border:
                             active
                               ? "1px solid rgba(127,224,247,0.36)"
                               : "1px solid rgba(255,255,255,0.07)",
+
                           background:
                             active
                               ? "rgba(96,184,210,0.09)"
                               : "rgba(255,255,255,0.018)",
+
                           color:
                             "#dcebef",
+
                           cursor:
                             "pointer",
+
                           borderRadius:
                             4,
                         }}
@@ -6709,9 +8012,12 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 9,
+
+                            gap:
+                              9,
                           }}
                         >
                           <Workflow
@@ -6741,10 +8047,13 @@ export default function Missions() {
                           style={{
                             margin:
                               "8px 0 0",
+
                             color:
                               "#64727a",
+
                             fontSize:
                               9,
+
                             lineHeight:
                               1.55,
                           }}
@@ -6763,10 +8072,13 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     18,
+
                   color:
                     "#687780",
+
                   fontSize:
                     9,
                 }}
@@ -6790,24 +8102,34 @@ export default function Missions() {
                 style={{
                   width:
                     "100%",
+
                   marginTop:
                     9,
+
                   height:
                     46,
+
                   padding:
                     "0 13px",
+
                   border:
                     "1px solid rgba(255,255,255,0.08)",
+
                   outline:
                     "none",
+
                   background:
                     "rgba(255,255,255,0.025)",
+
                   color:
                     "#e6f1f4",
+
                   fontSize:
                     11,
+
                   borderRadius:
                     4,
+
                   boxSizing:
                     "border-box",
                 }}
@@ -6817,10 +8139,13 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     17,
+
                   color:
                     "#687780",
+
                   fontSize:
                     9,
                 }}
@@ -6844,28 +8169,40 @@ export default function Missions() {
                 style={{
                   width:
                     "100%",
+
                   marginTop:
                     9,
+
                   minHeight:
                     120,
+
                   resize:
                     "vertical",
+
                   padding:
                     "12px 13px",
+
                   border:
                     "1px solid rgba(255,255,255,0.08)",
+
                   outline:
                     "none",
+
                   background:
                     "rgba(255,255,255,0.025)",
+
                   color:
                     "#e6f1f4",
+
                   fontFamily:
                     "inherit",
+
                   fontSize:
                     11,
+
                   lineHeight:
                     1.65,
+
                   borderRadius:
                     4,
                 }}
@@ -6875,11 +8212,15 @@ export default function Missions() {
                 style={{
                   marginTop:
                     18,
+
                   display:
                     "grid",
+
                   gridTemplateColumns:
                     "1fr 1fr",
-                  gap: 12,
+
+                  gap:
+                    12,
                 }}
               >
                 <div>
@@ -6887,8 +8228,10 @@ export default function Missions() {
                     style={{
                       display:
                         "block",
+
                       color:
                         "#687780",
+
                       fontSize:
                         9,
                     }}
@@ -6900,7 +8243,10 @@ export default function Missions() {
                     style={{
                       display:
                         "flex",
-                      gap: 7,
+
+                      gap:
+                        7,
+
                       marginTop:
                         9,
                     }}
@@ -6926,27 +8272,34 @@ export default function Missions() {
                           style={{
                             flex:
                               1,
+
                             height:
                               46,
+
                             border:
                               newMissionPriority ===
                               priority
                                 ? "1px solid rgba(128,224,246,0.34)"
                                 : "1px solid rgba(255,255,255,0.07)",
+
                             background:
                               newMissionPriority ===
                               priority
                                 ? "rgba(99,186,209,0.09)"
                                 : "rgba(255,255,255,0.02)",
+
                             color:
                               newMissionPriority ===
                               priority
                                 ? "#dcf8fd"
                                 : "#697780",
+
                             fontSize:
                               9,
+
                             cursor:
                               "pointer",
+
                             borderRadius:
                               4,
                           }}
@@ -6965,8 +8318,10 @@ export default function Missions() {
                     style={{
                       display:
                         "block",
+
                       color:
                         "#687780",
+
                       fontSize:
                         9,
                     }}
@@ -6988,22 +8343,31 @@ export default function Missions() {
                     style={{
                       width:
                         "100%",
+
                       height:
                         46,
+
                       marginTop:
                         9,
+
                       padding:
                         "0 11px",
+
                       border:
                         "1px solid rgba(255,255,255,0.07)",
+
                       outline:
                         "none",
+
                       background:
                         "#0d1114",
+
                       color:
                         "#dbe7eb",
+
                       fontSize:
                         10,
+
                       borderRadius:
                         4,
                     }}
@@ -7023,10 +8387,13 @@ export default function Missions() {
                 style={{
                   display:
                     "block",
+
                   marginTop:
                     18,
+
                   color:
                     "#687780",
+
                   fontSize:
                     9,
                 }}
@@ -7038,12 +8405,16 @@ export default function Missions() {
                 style={{
                   marginTop:
                     9,
+
                   padding:
                     "14px",
+
                   border:
                     "1px solid rgba(117,218,239,0.11)",
+
                   background:
                     "rgba(72,151,174,0.028)",
+
                   borderRadius:
                     4,
                 }}
@@ -7072,25 +8443,36 @@ export default function Missions() {
                   style={{
                     display:
                       "inline-flex",
+
                     alignItems:
                       "center",
-                    gap: 8,
+
+                    gap:
+                      8,
+
                     padding:
                       "10px 13px",
+
                     border:
                       "1px solid rgba(132,226,249,0.27)",
+
                     background:
                       "rgba(95,184,211,0.07)",
+
                     color:
                       "#d9f8fd",
+
                     fontSize:
                       9,
+
                     fontWeight:
                       800,
+
                     cursor:
                       uploadingMissionFiles
                         ? "wait"
                         : "pointer",
+
                     borderRadius:
                       4,
                   }}
@@ -7124,7 +8506,10 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
-                      gap: 7,
+
+                      gap:
+                        7,
+
                       marginTop:
                         12,
                     }}
@@ -7140,15 +8525,22 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 10,
+
+                            gap:
+                              10,
+
                             padding:
                               "10px",
+
                             border:
                               "1px solid rgba(255,255,255,0.06)",
+
                             background:
                               "rgba(255,255,255,0.015)",
+
                             borderRadius:
                               4,
                           }}
@@ -7161,6 +8553,7 @@ export default function Missions() {
                             style={{
                               flex:
                                 1,
+
                               minWidth:
                                 0,
                             }}
@@ -7169,12 +8562,16 @@ export default function Missions() {
                               style={{
                                 overflow:
                                   "hidden",
+
                                 textOverflow:
                                   "ellipsis",
+
                                 whiteSpace:
                                   "nowrap",
+
                                 color:
                                   "#bfdde3",
+
                                 fontSize:
                                   10,
                               }}
@@ -7188,8 +8585,10 @@ export default function Missions() {
                               style={{
                                 marginTop:
                                   3,
+
                                 color:
                                   "#596971",
+
                                 fontSize:
                                   7,
                               }}
@@ -7218,18 +8617,25 @@ export default function Missions() {
                             style={{
                               width:
                                 30,
+
                               height:
                                 30,
+
                               display:
                                 "grid",
+
                               placeItems:
                                 "center",
+
                               border:
                                 "1px solid rgba(255,255,255,0.06)",
+
                               background:
                                 "rgba(255,255,255,0.02)",
+
                               color:
                                 "#738087",
+
                               cursor:
                                 "pointer",
                             }}
@@ -7249,14 +8655,19 @@ export default function Missions() {
                     style={{
                       marginTop:
                         12,
+
                       padding:
                         "18px",
+
                       border:
                         "1px dashed rgba(255,255,255,0.065)",
+
                       textAlign:
                         "center",
+
                       color:
                         "#59676f",
+
                       fontSize:
                         9,
                     }}
@@ -7270,13 +8681,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   justifyContent:
                     "flex-end",
-                  gap: 8,
+
+                  gap:
+                    8,
+
                   marginTop:
                     22,
+
                   paddingTop:
                     17,
+
                   borderTop:
                     "1px solid rgba(255,255,255,0.06)",
                 }}
@@ -7288,23 +8705,27 @@ export default function Missions() {
                     setShowNewMission(
                       false
                     );
-                    setMissionError(
-                      ""
-                    );
+                    setMissionError("");
                   }}
                   style={{
                     height:
                       44,
+
                     padding:
                       "0 14px",
+
                     border:
                       "1px solid rgba(255,255,255,0.07)",
+
                     background:
                       "rgba(255,255,255,0.02)",
+
                     color:
                       "#8a969d",
+
                     fontSize:
                       9,
+
                     cursor:
                       "pointer",
                   }}
@@ -7327,10 +8748,13 @@ export default function Missions() {
                   style={{
                     height:
                       44,
+
                     padding:
                       "0 16px",
+
                     border:
                       "1px solid rgba(130,226,247,0.4)",
+
                     background:
                       !newMissionTitle.trim() ||
                       !newMissionObjective.trim() ||
@@ -7339,6 +8763,7 @@ export default function Missions() {
                       uploadingMissionFiles
                         ? "rgba(255,255,255,0.025)"
                         : "rgba(95,184,211,0.11)",
+
                     color:
                       !newMissionTitle.trim() ||
                       !newMissionObjective.trim() ||
@@ -7347,10 +8772,13 @@ export default function Missions() {
                       uploadingMissionFiles
                         ? "#55636b"
                         : "#e0faff",
+
                     fontSize:
                       9,
+
                     fontWeight:
                       800,
+
                     cursor:
                       !newMissionTitle.trim() ||
                       !newMissionObjective.trim() ||
@@ -7389,17 +8817,24 @@ export default function Missions() {
             style={{
               position:
                 "fixed",
+
               inset: 0,
+
               zIndex:
                 125,
+
               display:
                 "grid",
+
               placeItems:
                 "center",
+
               padding:
                 24,
+
               background:
                 "rgba(0,0,0,0.78)",
+
               backdropFilter:
                 "blur(13px)",
             }}
@@ -7419,16 +8854,22 @@ export default function Missions() {
               style={{
                 width:
                   "min(900px, 100%)",
+
                 maxHeight:
                   "calc(100vh - 48px)",
+
                 overflowY:
                   "auto",
+
                 border:
                   "1px solid rgba(127,225,246,0.19)",
+
                 background:
                   "#080b0e",
+
                 boxShadow:
                   "0 40px 120px rgba(0,0,0,0.70)",
+
                 borderRadius:
                   6,
               }}
@@ -7437,13 +8878,19 @@ export default function Missions() {
                 style={{
                   display:
                     "flex",
+
                   justifyContent:
                     "space-between",
+
                   alignItems:
                     "center",
-                  gap: 18,
+
+                  gap:
+                    18,
+
                   padding:
                     "21px 22px",
+
                   borderBottom:
                     "1px solid rgba(255,255,255,0.06)",
                 }}
@@ -7453,8 +8900,10 @@ export default function Missions() {
                     style={{
                       color:
                         "#687780",
+
                       fontSize:
                         9,
+
                       letterSpacing:
                         "0.17em",
                     }}
@@ -7466,8 +8915,10 @@ export default function Missions() {
                     style={{
                       margin:
                         "8px 0 0",
+
                       color:
                         "#eaf4f7",
+
                       fontSize:
                         23,
                     }}
@@ -7482,27 +8933,33 @@ export default function Missions() {
                     setShowEditMission(
                       false
                     );
-                    setMissionError(
-                      ""
-                    );
+                    setMissionError("");
                   }}
                   style={{
                     width:
                       36,
+
                     height:
                       36,
+
                     display:
                       "grid",
+
                     placeItems:
                       "center",
+
                     border:
                       "1px solid rgba(255,255,255,0.07)",
+
                     background:
                       "rgba(255,255,255,0.025)",
+
                     color:
                       "#7d8a91",
+
                     cursor:
                       "pointer",
+
                     borderRadius:
                       4,
                   }}
@@ -7525,16 +8982,22 @@ export default function Missions() {
                   style={{
                     padding:
                       "11px 12px",
+
                     border:
                       "1px solid rgba(239,196,151,0.13)",
+
                     background:
                       "rgba(156,113,61,0.045)",
+
                     color:
                       "#9d8b73",
+
                     fontSize:
                       9,
+
                     lineHeight:
                       1.55,
+
                     borderRadius:
                       4,
                   }}
@@ -7548,12 +9011,16 @@ export default function Missions() {
                   style={{
                     display:
                       "block",
+
                     marginTop:
                       18,
+
                     color:
                       "#687780",
+
                     fontSize:
                       9,
+
                     letterSpacing:
                       "0.13em",
                   }}
@@ -7575,24 +9042,34 @@ export default function Missions() {
                   style={{
                     width:
                       "100%",
+
                     marginTop:
                       9,
+
                     height:
                       46,
+
                     padding:
                       "0 13px",
+
                     border:
                       "1px solid rgba(255,255,255,0.08)",
+
                     outline:
                       "none",
+
                     background:
                       "rgba(255,255,255,0.025)",
+
                     color:
                       "#e6f1f4",
+
                     fontSize:
                       11,
+
                     borderRadius:
                       4,
+
                     boxSizing:
                       "border-box",
                   }}
@@ -7602,12 +9079,16 @@ export default function Missions() {
                   style={{
                     display:
                       "block",
+
                     marginTop:
                       17,
+
                     color:
                       "#687780",
+
                     fontSize:
                       9,
+
                     letterSpacing:
                       "0.13em",
                   }}
@@ -7626,34 +9107,44 @@ export default function Missions() {
                       event.target.value
                     )
                   }
-                  rows={
-                    6
-                  }
+                  rows={6}
                   style={{
                     width:
                       "100%",
+
                     marginTop:
                       9,
+
                     minHeight:
                       120,
+
                     resize:
                       "vertical",
+
                     padding:
                       "12px 13px",
+
                     border:
                       "1px solid rgba(255,255,255,0.08)",
+
                     outline:
                       "none",
+
                     background:
                       "rgba(255,255,255,0.025)",
+
                     color:
                       "#e6f1f4",
+
                     fontFamily:
                       "inherit",
+
                     fontSize:
                       11,
+
                     lineHeight:
                       1.65,
+
                     borderRadius:
                       4,
                   }}
@@ -7663,9 +9154,13 @@ export default function Missions() {
                   style={{
                     display:
                       "grid",
+
                     gridTemplateColumns:
                       "1fr 1fr",
-                    gap: 12,
+
+                    gap:
+                      12,
+
                     marginTop:
                       17,
                   }}
@@ -7675,8 +9170,10 @@ export default function Missions() {
                       style={{
                         display:
                           "block",
+
                         color:
                           "#687780",
+
                         fontSize:
                           9,
                       }}
@@ -7688,7 +9185,10 @@ export default function Missions() {
                       style={{
                         display:
                           "flex",
-                        gap: 7,
+
+                        gap:
+                          7,
+
                         marginTop:
                           9,
                       }}
@@ -7714,27 +9214,34 @@ export default function Missions() {
                             style={{
                               flex:
                                 1,
+
                               height:
                                 46,
+
                               border:
                                 editMissionPriority ===
                                 priority
                                   ? "1px solid rgba(128,224,246,0.34)"
                                   : "1px solid rgba(255,255,255,0.07)",
+
                               background:
                                 editMissionPriority ===
                                 priority
                                   ? "rgba(99,186,209,0.09)"
                                   : "rgba(255,255,255,0.02)",
+
                               color:
                                 editMissionPriority ===
                                 priority
                                   ? "#dcf8fd"
                                   : "#697780",
+
                               fontSize:
                                 9,
+
                               cursor:
                                 "pointer",
+
                               borderRadius:
                                 4,
                             }}
@@ -7753,8 +9260,10 @@ export default function Missions() {
                       style={{
                         display:
                           "block",
+
                         color:
                           "#687780",
+
                         fontSize:
                           9,
                       }}
@@ -7776,22 +9285,31 @@ export default function Missions() {
                       style={{
                         width:
                           "100%",
+
                         height:
                           46,
+
                         marginTop:
                           9,
+
                         padding:
                           "0 11px",
+
                         border:
                           "1px solid rgba(255,255,255,0.07)",
+
                         outline:
                           "none",
+
                         background:
                           "#0d1114",
+
                         color:
                           "#dbe7eb",
+
                         fontSize:
                           10,
+
                         borderRadius:
                           4,
                       }}
@@ -7817,17 +9335,22 @@ export default function Missions() {
                     style={{
                       display:
                         "flex",
+
                       justifyContent:
                         "space-between",
+
                       alignItems:
                         "center",
-                      gap: 10,
+
+                      gap:
+                        10,
                     }}
                   >
                     <label
                       style={{
                         color:
                           "#687780",
+
                         fontSize:
                           9,
                       }}
@@ -7839,6 +9362,7 @@ export default function Missions() {
                       style={{
                         color:
                           "#56666e",
+
                         fontSize:
                           8,
                       }}
@@ -7875,27 +9399,39 @@ export default function Missions() {
                     style={{
                       display:
                         "inline-flex",
+
                       alignItems:
                         "center",
-                      gap: 8,
+
+                      gap:
+                        8,
+
                       marginTop:
                         9,
+
                       padding:
                         "10px 13px",
+
                       border:
                         "1px solid rgba(132,226,249,0.27)",
+
                       background:
                         "rgba(95,184,211,0.07)",
+
                       color:
                         "#d9f8fd",
+
                       fontSize:
                         9,
+
                       fontWeight:
                         800,
+
                       cursor:
                         uploadingMissionFiles
                           ? "wait"
                           : "pointer",
+
                       borderRadius:
                         4,
                     }}
@@ -7912,7 +9448,10 @@ export default function Missions() {
                     style={{
                       display:
                         "grid",
-                      gap: 7,
+
+                      gap:
+                        7,
+
                       marginTop:
                         10,
                     }}
@@ -7928,15 +9467,22 @@ export default function Missions() {
                           style={{
                             display:
                               "flex",
+
                             alignItems:
                               "center",
-                            gap: 10,
+
+                            gap:
+                              10,
+
                             padding:
                               "10px",
+
                             border:
                               "1px solid rgba(255,255,255,0.06)",
+
                             background:
                               "rgba(255,255,255,0.015)",
+
                             borderRadius:
                               4,
                           }}
@@ -7949,6 +9495,7 @@ export default function Missions() {
                             style={{
                               flex:
                                 1,
+
                               minWidth:
                                 0,
                             }}
@@ -7957,12 +9504,16 @@ export default function Missions() {
                               style={{
                                 overflow:
                                   "hidden",
+
                                 textOverflow:
                                   "ellipsis",
+
                                 whiteSpace:
                                   "nowrap",
+
                                 color:
                                   "#bfdde3",
+
                                 fontSize:
                                   10,
                               }}
@@ -7971,6 +9522,35 @@ export default function Missions() {
                                 file.filename
                               }
                             </div>
+
+                            {file.size && (
+                              <div
+                                style={{
+                                  marginTop:
+                                    3,
+
+                                  color:
+                                    "#596971",
+
+                                  fontFamily:
+                                    "monospace",
+
+                                  fontSize:
+                                    7,
+                                }}
+                              >
+                                {(
+                                  Number(
+                                    file.size
+                                  ) /
+                                  1024 /
+                                  1024
+                                ).toFixed(
+                                  2
+                                )}{" "}
+                                MB
+                              </div>
+                            )}
                           </div>
 
                           <button
@@ -7983,18 +9563,25 @@ export default function Missions() {
                             style={{
                               width:
                                 30,
+
                               height:
                                 30,
+
                               display:
                                 "grid",
+
                               placeItems:
                                 "center",
+
                               border:
                                 "1px solid rgba(255,255,255,0.06)",
+
                               background:
                                 "rgba(255,255,255,0.02)",
+
                               color:
                                 "#738087",
+
                               cursor:
                                 "pointer",
                             }}
@@ -8015,13 +9602,19 @@ export default function Missions() {
                   style={{
                     display:
                       "flex",
+
                     justifyContent:
                       "flex-end",
-                    gap: 8,
+
+                    gap:
+                      8,
+
                     marginTop:
                       22,
+
                     paddingTop:
                       17,
+
                     borderTop:
                       "1px solid rgba(255,255,255,0.06)",
                   }}
@@ -8032,23 +9625,27 @@ export default function Missions() {
                       setShowEditMission(
                         false
                       );
-                      setMissionError(
-                        ""
-                      );
+                      setMissionError("");
                     }}
                     style={{
                       height:
                         44,
+
                       padding:
                         "0 14px",
+
                       border:
                         "1px solid rgba(255,255,255,0.07)",
+
                       background:
                         "rgba(255,255,255,0.02)",
+
                       color:
                         "#8a969d",
+
                       fontSize:
                         9,
+
                       cursor:
                         "pointer",
                     }}
@@ -8072,10 +9669,13 @@ export default function Missions() {
                     style={{
                       height:
                         44,
+
                       padding:
                         "0 16px",
+
                       border:
                         "1px solid rgba(130,226,247,0.4)",
+
                       background:
                         savingMissionEdit ||
                         uploadingMissionFiles ||
@@ -8085,6 +9685,7 @@ export default function Missions() {
                           0
                           ? "rgba(255,255,255,0.025)"
                           : "rgba(95,184,211,0.11)",
+
                       color:
                         savingMissionEdit ||
                         uploadingMissionFiles ||
@@ -8094,10 +9695,13 @@ export default function Missions() {
                           0
                           ? "#55636b"
                           : "#e0faff",
+
                       fontSize:
                         9,
+
                       fontWeight:
                         800,
+
                       cursor:
                         savingMissionEdit ||
                         uploadingMissionFiles ||
@@ -8141,6 +9745,7 @@ export default function Missions() {
             from {
               transform: rotate(0deg);
             }
+
             to {
               transform: rotate(360deg);
             }
@@ -8148,6 +9753,12 @@ export default function Missions() {
 
           @media (max-width: 1100px) {
             .nova-mission-responsive {
+              grid-template-columns: 1fr !important;
+            }
+          }
+
+          @media (max-width: 760px) {
+            .nova-mission-mobile-stack {
               grid-template-columns: 1fr !important;
             }
           }

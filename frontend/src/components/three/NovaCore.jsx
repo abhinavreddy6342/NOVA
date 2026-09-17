@@ -40,7 +40,7 @@ function OrbParticles({ state }) {
     const count = 320;
     const data = new Float32Array(count * 3);
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count; i += 1) {
       const radius =
         1.15 + Math.random() * 1.5;
 
@@ -58,7 +58,8 @@ function OrbParticles({ state }) {
         Math.cos(theta);
 
       data[i * 3 + 1] =
-        radius * Math.cos(phi);
+        radius *
+        Math.cos(phi);
 
       data[i * 3 + 2] =
         radius *
@@ -78,11 +79,25 @@ function OrbParticles({ state }) {
       frameState.clock.elapsedTime;
 
     pointsRef.current.rotation.y =
-      time * config.particleSpeed * 0.18;
+      time *
+      config.particleSpeed *
+      0.18;
 
     pointsRef.current.rotation.x =
       Math.sin(time * 0.25) * 0.025;
   });
+
+  const particleSize =
+    state === "speaking"
+      ? 0.033
+      : state === "thinking"
+        ? 0.028
+        : 0.023;
+
+  const particleOpacity =
+    state === "speaking"
+      ? 0.62
+      : 0.42;
 
   return (
     <points ref={pointsRef}>
@@ -97,20 +112,10 @@ function OrbParticles({ state }) {
 
       <pointsMaterial
         color="#9eeaff"
-        size={
-          state === "speaking"
-            ? 0.033
-            : state === "thinking"
-              ? 0.028
-              : 0.023
-        }
+        size={particleSize}
         sizeAttenuation
         transparent
-        opacity={
-          state === "speaking"
-            ? 0.62
-            : 0.42
-        }
+        opacity={particleOpacity}
         depthWrite={false}
       />
     </points>
@@ -121,11 +126,11 @@ function IntelligenceCore({
   state,
   audioLevel,
 }) {
-  const core = useRef(null);
-  const outerRing = useRef(null);
-  const middleRing = useRef(null);
-  const innerRing = useRef(null);
-  const glow = useRef(null);
+  const coreRef = useRef(null);
+  const outerRingRef = useRef(null);
+  const middleRingRef = useRef(null);
+  const innerRingRef = useRef(null);
+  const glowRef = useRef(null);
 
   const { pointer } = useThree();
 
@@ -134,73 +139,93 @@ function IntelligenceCore({
     STATE_CONFIG.idle;
 
   useFrame((_, delta) => {
-    if (!core.current) {
+    const core = coreRef.current;
+
+    if (!core) {
       return;
     }
 
     const time =
       performance.now() * 0.001;
 
+    const normalizedAudio =
+      typeof audioLevel === "number"
+        ? Math.max(0, Math.min(audioLevel, 1))
+        : 0;
+
     const voiceEnergy =
       state === "speaking"
         ? Math.max(
             0.15,
-            audioLevel || 0
+            normalizedAudio
           )
         : 0;
+
+    const pulseFrequency =
+      state === "speaking"
+        ? 7
+        : 2.2;
 
     const pulse =
       1 +
       Math.sin(
-        time *
-          (state === "speaking"
-            ? 7
-            : 2.2)
+        time * pulseFrequency
       ) *
-        (config.corePulse +
-          voiceEnergy * 0.05);
+        (
+          config.corePulse +
+          voiceEnergy * 0.05
+        );
 
-    core.current.scale.setScalar(
-      pulse
-    );
+    core.scale.setScalar(pulse);
 
-    core.current.rotation.x +=
+    core.rotation.x +=
       delta * 0.12;
 
-    core.current.rotation.y +=
+    core.rotation.y +=
       delta * 0.22;
 
-    if (innerRing.current) {
-      innerRing.current.rotation.x +=
-        delta * config.ringSpeed * 0.42;
+    if (innerRingRef.current) {
+      innerRingRef.current.rotation.x +=
+        delta *
+        config.ringSpeed *
+        0.42;
 
-      innerRing.current.rotation.y +=
-        delta * config.ringSpeed * 0.65;
+      innerRingRef.current.rotation.y +=
+        delta *
+        config.ringSpeed *
+        0.65;
     }
 
-    if (middleRing.current) {
-      middleRing.current.rotation.y -=
-        delta * config.ringSpeed * 0.34;
+    if (middleRingRef.current) {
+      middleRingRef.current.rotation.y -=
+        delta *
+        config.ringSpeed *
+        0.34;
 
-      middleRing.current.rotation.z +=
-        delta * config.ringSpeed * 0.2;
+      middleRingRef.current.rotation.z +=
+        delta *
+        config.ringSpeed *
+        0.2;
     }
 
-    if (outerRing.current) {
-      outerRing.current.rotation.x +=
-        delta * config.ringSpeed * 0.2;
+    if (outerRingRef.current) {
+      outerRingRef.current.rotation.x +=
+        delta *
+        config.ringSpeed *
+        0.2;
 
-      outerRing.current.rotation.z -=
-        delta * config.ringSpeed * 0.3;
+      outerRingRef.current.rotation.z -=
+        delta *
+        config.ringSpeed *
+        0.3;
     }
 
-    if (glow.current) {
-      glow.current.scale.setScalar(
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(
         1.05 +
           config.glow * 0.12 +
           voiceEnergy * 0.25 +
-          Math.sin(time * 1.8) *
-            0.025
+          Math.sin(time * 1.8) * 0.025
       );
     }
 
@@ -210,22 +235,24 @@ function IntelligenceCore({
     const targetY =
       pointer.y * 0.09;
 
-    core.current.position.x +=
-      (targetX -
-        core.current.position.x) *
+    core.position.x +=
+      (targetX - core.position.x) *
       0.035;
 
-    core.current.position.y +=
-      (targetY -
-        core.current.position.y) *
+    core.position.y +=
+      (targetY - core.position.y) *
       0.035;
   });
 
+  const coreEmissiveIntensity =
+    0.65 +
+    config.glow * 0.25 +
+    (state === "speaking" ? 0.5 : 0);
+
   return (
     <group>
-      {/* atmospheric glow */}
       <Sphere
-        ref={glow}
+        ref={glowRef}
         args={[0.72, 32, 32]}
       >
         <meshBasicMaterial
@@ -240,9 +267,8 @@ function IntelligenceCore({
         />
       </Sphere>
 
-      {/* central intelligence core */}
       <Sphere
-        ref={core}
+        ref={coreRef}
         args={[0.65, 40, 40]}
       >
         <meshStandardMaterial
@@ -251,17 +277,12 @@ function IntelligenceCore({
           roughness={0.12}
           emissive="#51cfff"
           emissiveIntensity={
-            0.65 +
-            config.glow * 0.25 +
-            (state === "speaking"
-              ? 0.5
-              : 0)
+            coreEmissiveIntensity
           }
         />
       </Sphere>
 
-      {/* inner energy ring */}
-      <mesh ref={innerRing}>
+      <mesh ref={innerRingRef}>
         <torusGeometry
           args={[
             0.92,
@@ -282,9 +303,8 @@ function IntelligenceCore({
         />
       </mesh>
 
-      {/* middle energy ring */}
       <mesh
-        ref={middleRing}
+        ref={middleRingRef}
         rotation={[
           0.7,
           0.2,
@@ -311,9 +331,8 @@ function IntelligenceCore({
         />
       </mesh>
 
-      {/* outer orbital ring */}
       <mesh
-        ref={outerRing}
+        ref={outerRingRef}
         rotation={[
           1.1,
           0.4,
@@ -443,17 +462,22 @@ function OrbRuntime() {
   useEffect(() => {
     const handleAvatarState =
       (event) => {
+        const nextState =
+          event.detail?.state;
+
+        const nextAudio =
+          event.detail?.audioLevel;
+
         setState(
-          event.detail?.state ||
-            "idle"
+          nextState &&
+            STATE_CONFIG[nextState]
+            ? nextState
+            : "idle"
         );
 
         setAudioLevel(
-          typeof event.detail
-            ?.audioLevel ===
-            "number"
-            ? event.detail
-                .audioLevel
+          typeof nextAudio === "number"
+            ? nextAudio
             : 0
         );
       };
@@ -550,6 +574,7 @@ export default function NovaCore() {
         <OrbitControls
           enableZoom={false}
           enablePan={false}
+          enableRotate={false}
           autoRotate
           autoRotateSpeed={0.18}
           minPolarAngle={

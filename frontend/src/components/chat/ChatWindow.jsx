@@ -17,22 +17,20 @@ import {
   CheckCircle2,
   AlertCircle,
   Download,
+  ChevronDown,
+  Database,
+  FolderOpen,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
-const API_URL = "http://127.0.0.1:8001";
+const API_URL =
+  "http://127.0.0.1:8001";
 
-const MODEL = "llama3.2:latest";
+const MODEL =
+  "llama3.2:latest";
 
-/*
- * Decorative icon props.
- *
- * Explicitly marking Lucide SVGs as hidden from the accessibility
- * tree prevents raw "svg" labels from leaking into copied/read
- * text or accessibility output while keeping the icons visible.
- */
 const ICON_PROPS = {
   "aria-hidden": true,
   focusable: false,
@@ -41,17 +39,21 @@ const ICON_PROPS = {
 const welcomeMessage = {
   id: "nova-welcome",
   role: "assistant",
-  content: "Hi! I'm NOVA. How can I help you today?",
+  content:
+    "Hi! I'm NOVA. How can I help you today?",
   time: new Date(),
   attachments: [],
   agent: null,
 };
 
 function formatTime(date) {
-  return new Intl.DateTimeFormat("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-IN",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  ).format(date);
 }
 
 function createId(prefix = "msg") {
@@ -60,8 +62,14 @@ function createId(prefix = "msg") {
     .slice(2, 8)}`;
 }
 
-function getFileIcon(fileType = "") {
-  if (fileType.startsWith("image/")) {
+function getFileIcon(
+  fileType = ""
+) {
+  if (
+    fileType.startsWith(
+      "image/"
+    )
+  ) {
     return (
       <ImageIcon
         size={14}
@@ -78,101 +86,164 @@ function getFileIcon(fileType = "") {
   );
 }
 
-function mapHistoryMessage(message) {
+function normalizeArtifact(
+  art,
+  index = 0
+) {
+  const filePath = String(
+    art?.file_path ||
+      art?.filePath ||
+      ""
+  )
+    .replace(
+      /\\/g,
+      "/"
+    )
+    .replace(
+      /^\/+/,
+      ""
+    );
+
+  const fileName =
+    art?.file_name ||
+    art?.fileName ||
+    (
+      filePath
+        ? filePath
+            .split("/")
+            .pop()
+        : `artifact-${index}`
+    );
+
+  const extension =
+    art?.extension ||
+    (
+      fileName.includes(".")
+        ? `.${fileName
+            .split(".")
+            .pop()
+            .toLowerCase()}`
+        : ""
+    );
+
+  const sizeBytes =
+    typeof art?.size_bytes ===
+    "number"
+      ? art.size_bytes
+      : typeof art?.sizeBytes ===
+          "number"
+        ? art.sizeBytes
+        : null;
+
+  const available =
+    art?.available !== false;
+
+  return {
+    stepId:
+      art?.step_id ||
+      art?.stepId ||
+      `step-${index}`,
+
+    filePath,
+
+    fileName,
+
+    extension,
+
+    sizeBytes,
+
+    verificationStatus:
+      art?.verification_status ||
+      art?.verificationStatus ||
+      "verified",
+
+    downloadUrl:
+      available &&
+      filePath
+        ? getDownloadUrl(
+            filePath
+          )
+        : null,
+
+    available,
+  };
+}
+
+function mapHistoryMessage(
+  message
+) {
   let agentObj = null;
 
-  if (message.agent && typeof message.agent === "object") {
-    const rawArtifacts = Array.isArray(message.agent.artifacts)
-      ? message.agent.artifacts
-      : [];
+  if (
+    message.agent &&
+    typeof message.agent ===
+      "object"
+  ) {
+    const rawArtifacts =
+      Array.isArray(
+        message.agent
+          .artifacts
+      )
+        ? message.agent
+            .artifacts
+        : [];
 
-    const artifacts = rawArtifacts
-      .filter((art) => {
-        const filePath = String(
-          art.file_path || art.filePath || ""
+    const artifacts =
+      rawArtifacts
+        .map(
+          normalizeArtifact
         )
-          .replace(/\\/g, "/")
-          .replace(/^\/+/, "");
+        .filter(
+          (artifact) => {
+            const normalized =
+              String(
+                artifact.filePath ||
+                  ""
+              ).toLowerCase();
 
-        if (!filePath) return false;
+            if (!normalized) {
+              return false;
+            }
 
-        const normalized = filePath.toLowerCase();
+            if (
+              normalized.startsWith(
+                "input/"
+              ) ||
+              normalized.startsWith(
+                "workspace/input/"
+              ) ||
+              normalized.includes(
+                "/input/"
+              )
+            ) {
+              return false;
+            }
 
-        if (
-          normalized.startsWith("input/") ||
-          normalized.startsWith("workspace/input/") ||
-          normalized.includes("/input/")
-        ) {
-          return false;
-        }
-
-        return (
-          normalized.startsWith("output/") ||
-          normalized.startsWith("workspace/output/")
+            return (
+              normalized.startsWith(
+                "output/"
+              ) ||
+              normalized.startsWith(
+                "workspace/output/"
+              )
+            );
+          }
+        )
+        .filter(
+          (artifact) =>
+            Boolean(
+              artifact.downloadUrl
+            )
         );
-      })
-      .map((art, index) => {
-        const filePath = String(
-          art.file_path || art.filePath || ""
-        )
-          .replace(/\\/g, "/")
-          .replace(/^\/+/, "");
-
-        const fileName =
-          art.file_name ||
-          art.fileName ||
-          (filePath
-            ? filePath.split("/").pop()
-            : `artifact-${index}`);
-
-        const extension =
-          art.extension ||
-          (fileName.includes(".")
-            ? `.${fileName.split(".").pop()}`
-            : "");
-
-        const sizeBytes =
-          typeof art.size_bytes === "number"
-            ? art.size_bytes
-            : typeof art.sizeBytes === "number"
-            ? art.sizeBytes
-            : null;
-
-        const isAvailable =
-          art.available !== false;
-
-        return {
-          stepId:
-            art.step_id ||
-            art.stepId ||
-            `step-${index}`,
-
-          filePath,
-
-          fileName,
-
-          extension,
-
-          sizeBytes,
-
-          verificationStatus:
-            art.verification_status ||
-            art.verificationStatus ||
-            "verified",
-
-          downloadUrl: isAvailable
-            ? getDownloadUrl(filePath)
-            : null,
-
-          available: isAvailable,
-        };
-      });
 
     agentObj = {
-      plan: message.agent.plan || null,
+      plan:
+        message.agent.plan ||
+        null,
 
       execution:
-        message.agent.execution || null,
+        message.agent.execution ||
+        null,
 
       artifacts,
     };
@@ -183,46 +254,67 @@ function mapHistoryMessage(message) {
 
     role: message.role,
 
-    content: message.content,
+    content:
+      message.content,
 
-    time: new Date(message.created_at),
-
-    attachments: (message.attachments || []).map(
-      (attachment) => ({
-        name: attachment.filename,
-
-        size: 0,
-
-        type: attachment.content_type || "",
-
-        file_id: attachment.file_id,
-      })
+    time: new Date(
+      message.created_at
     ),
+
+    attachments:
+      (
+        message.attachments ||
+        []
+      ).map(
+        (attachment) => ({
+          name:
+            attachment.filename,
+
+          size:
+            Number(
+              attachment.size ||
+                0
+            ),
+
+          type:
+            attachment.content_type ||
+            "",
+
+          file_id:
+            attachment.file_id,
+        })
+      ),
 
     agent: agentObj,
   };
 }
 
-/*
- * Sends the current NOVA state to the 3D runtime.
- */
-function emitAvatarState(state, audioLevel = 0) {
+function emitAvatarState(
+  state,
+  audioLevel = 0
+) {
   window.dispatchEvent(
-    new CustomEvent("nova:avatar-state", {
-      detail: {
-        state,
-        audioLevel,
-        timestamp: Date.now(),
-      },
-    })
+    new CustomEvent(
+      "nova:avatar-state",
+      {
+        detail: {
+          state,
+          audioLevel,
+          timestamp:
+            Date.now(),
+        },
+      }
+    )
   );
 }
 
-/*
- * Check whether a browser file is a spreadsheet.
- */
-function isSpreadsheetFile(file) {
-  if (!file?.name && !file?.extension) {
+function isSpreadsheetFile(
+  file
+) {
+  if (
+    !file?.name &&
+    !file?.extension
+  ) {
     return false;
   }
 
@@ -236,24 +328,19 @@ function isSpreadsheetFile(file) {
   return (
     extension === "xlsx" ||
     extension === ".xlsx" ||
+    extension === "xls" ||
+    extension === ".xls" ||
     extension === "csv" ||
     extension === ".csv"
   );
 }
 
-/*
- * Detect PowerPoint / presentation generation requests.
- *
- * Handles natural phrasing such as:
- *
- * Create a professional PowerPoint presentation
- * Generate a presentation about AI
- * Make a slide deck about industrial automation
- * Prepare slides for a project
- * Build a PPTX presentation
- */
-function isPresentationGenerationRequest(message) {
-  const text = String(message || "")
+function isPresentationGenerationRequest(
+  message
+) {
+  const text = String(
+    message || ""
+  )
     .toLowerCase()
     .trim();
 
@@ -330,26 +417,33 @@ function isPresentationGenerationRequest(message) {
     /\b(create|generate|make|prepare|write|produce|build|design|draft)\b/i;
 
   return (
-    explicitSignals.some((signal) =>
-      text.includes(signal)
+    explicitSignals.some(
+      (signal) =>
+        text.includes(signal)
     ) ||
-    naturalPresentationPattern.test(text) ||
-    presentationTopicPattern.test(text) ||
+    naturalPresentationPattern.test(
+      text
+    ) ||
+    presentationTopicPattern.test(
+      text
+    ) ||
     (
-      presentationFilePattern.test(text) &&
+      presentationFilePattern.test(
+        text
+      ) &&
       actionPattern.test(text)
     )
   );
 }
 
-/*
- * Decide whether the user is asking for an agentic workflow.
- *
- * Normal conversation remains on /api/chat/.
- * Agent requests use /api/agents/run.
- */
-function isAgentRequest(message) {
-  const text = message.toLowerCase().trim();
+function isAgentRequest(
+  message
+) {
+  const text = String(
+    message || ""
+  )
+    .toLowerCase()
+    .trim();
 
   const agentSignals = [
     "local knowledge",
@@ -477,7 +571,6 @@ function isAgentRequest(message) {
     "create excel",
     "generate an excel",
     "generate excel",
-    ".xlsx",
 
     "create a powerpoint",
     "create powerpoint",
@@ -550,7 +643,7 @@ function isAgentRequest(message) {
   ];
 
   const naturalDocumentPattern =
-    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|document about|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
+    /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
 
   const naturalComputationPattern =
     /\b(calculate|compute|solve|evaluate|find)\b[\s\S]{0,120}\b(factorial|fibonacci|equation|average|sum|total|maximum|minimum|percentage|prime|power|square|cube|using python|with python|in python)\b/i;
@@ -562,22 +655,36 @@ function isAgentRequest(message) {
     /\b(create|generate|make|draw|plot|show)\b[\s\S]{0,120}\b(chart|graph|plot|bar chart|line chart|pie chart|scatter plot|visual summary|visualization)\b/i;
 
   return (
-    agentSignals.some((signal) =>
-      text.includes(signal)
+    agentSignals.some(
+      (signal) =>
+        text.includes(signal)
     ) ||
-    naturalDocumentPattern.test(text) ||
-    naturalComputationPattern.test(text) ||
-    naturalSpreadsheetPattern.test(text) ||
-    naturalChartPattern.test(text) ||
-    isPresentationGenerationRequest(text)
+    naturalDocumentPattern.test(
+      text
+    ) ||
+    naturalComputationPattern.test(
+      text
+    ) ||
+    naturalSpreadsheetPattern.test(
+      text
+    ) ||
+    naturalChartPattern.test(
+      text
+    ) ||
+    isPresentationGenerationRequest(
+      text
+    )
   );
 }
 
-/*
- * Detect direct document generation.
- */
-function isDocumentGenerationRequest(message) {
-  const text = message.toLowerCase().trim();
+function isDocumentGenerationRequest(
+  message
+) {
+  const text = String(
+    message || ""
+  )
+    .toLowerCase()
+    .trim();
 
   const explicitDocumentSignals = [
     "create a docx",
@@ -605,18 +712,24 @@ function isDocumentGenerationRequest(message) {
     /\b(create|generate|write|make|prepare|draft|produce|build)\b[\s\S]{0,120}\b(document|docx|word document|word file|report|proposal|letter|summary|notes|documentation)\b/i;
 
   return (
-    explicitDocumentSignals.some((signal) =>
-      text.includes(signal)
+    explicitDocumentSignals.some(
+      (signal) =>
+        text.includes(signal)
     ) ||
-    naturalDocumentPattern.test(text)
+    naturalDocumentPattern.test(
+      text
+    )
   );
 }
 
-/*
- * Detect computational/code-execution requests.
- */
-function isCodeExecutionRequest(message) {
-  const text = message.toLowerCase().trim();
+function isCodeExecutionRequest(
+  message
+) {
+  const text = String(
+    message || ""
+  )
+    .toLowerCase()
+    .trim();
 
   const directSignals = [
     "execute python",
@@ -646,18 +759,24 @@ function isCodeExecutionRequest(message) {
     /\b(calculate|compute|solve|evaluate|find)\b[\s\S]{0,100}\b(sum|average|total|factorial|fibonacci|equation|percentage|maximum|minimum|prime|power|square|cube|using python|with python|in python)\b/i;
 
   return (
-    directSignals.some((signal) =>
-      text.includes(signal)
+    directSignals.some(
+      (signal) =>
+        text.includes(signal)
     ) ||
-    calculationPattern.test(text)
+    calculationPattern.test(
+      text
+    )
   );
 }
 
-/*
- * Detect spreadsheet analysis requests.
- */
-function isSpreadsheetRequest(message) {
-  const text = message.toLowerCase().trim();
+function isSpreadsheetRequest(
+  message
+) {
+  const text = String(
+    message || ""
+  )
+    .toLowerCase()
+    .trim();
 
   const directSignals = [
     "spreadsheet",
@@ -695,14 +814,19 @@ function isSpreadsheetRequest(message) {
     /\b(analyze|analyse|inspect|read|review|summarize|summarise|calculate|compute|find|compare|identify|show)\b[\s\S]{0,120}\b(spreadsheet|excel|workbook|worksheet|csv|xlsx|xls|sales data|sales sheet|sales file|table)\b/i;
 
   return (
-    directSignals.some((signal) =>
-      text.includes(signal)
+    directSignals.some(
+      (signal) =>
+        text.includes(signal)
     ) ||
-    naturalPattern.test(text)
+    naturalPattern.test(
+      text
+    )
   );
 }
 
-function getStepStatusIcon(status) {
+function getStepStatusIcon(
+  status
+) {
   const norm = String(
     status || ""
   ).toLowerCase();
@@ -746,7 +870,8 @@ function getWorkflowTitle(
 ) {
   if (
     plan?.title &&
-    typeof plan.title === "string"
+    typeof plan.title ===
+      "string"
   ) {
     return plan.title;
   }
@@ -802,10 +927,14 @@ function getWorkflowTitle(
       (step) =>
         step.tool
           ?.toLowerCase()
-          .includes("vault") ||
+          .includes(
+            "vault"
+          ) ||
         step.tool
           ?.toLowerCase()
-          .includes("search") ||
+          .includes(
+            "search"
+          ) ||
         step.title
           ?.toLowerCase()
           .includes(
@@ -827,10 +956,14 @@ function getWorkflowTitle(
       (step) =>
         step.tool
           ?.toLowerCase()
-          .includes("excel") ||
+          .includes(
+            "excel"
+          ) ||
         step.tool
           ?.toLowerCase()
-          .includes("csv") ||
+          .includes(
+            "csv"
+          ) ||
         step.tool
           ?.toLowerCase()
           .includes(
@@ -857,10 +990,14 @@ function getWorkflowTitle(
       (step) =>
         step.tool
           ?.toLowerCase()
-          .includes("python") ||
+          .includes(
+            "python"
+          ) ||
         step.tool
           ?.toLowerCase()
-          .includes("code") ||
+          .includes(
+            "code"
+          ) ||
         step.tool
           ?.toLowerCase()
           .includes(
@@ -911,7 +1048,9 @@ function getWorkflowSubtitle(
     return "Task execution encountered errors";
   }
 
-  if (norm === "blocked") {
+  if (
+    norm === "blocked"
+  ) {
     return "Task execution was blocked";
   }
 
@@ -923,70 +1062,83 @@ function getWorkflowSubtitle(
     return "NOVA is executing the workflow";
   }
 
+  if (
+    norm === "cancelled" ||
+    norm === "canceled" ||
+    norm === "stopped"
+  ) {
+    return "Task execution was stopped";
+  }
+
   return "Workflow in progress";
 }
 
-/*
- * Convert a NOVA workspace-relative file path into
- * the backend download endpoint.
- */
-function getDownloadUrl(filePath) {
+function getDownloadUrl(
+  filePath
+) {
   if (!filePath) {
     return null;
   }
 
-  const normalizedPath = String(
-    filePath
-  )
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "");
+  const normalizedPath =
+    String(filePath)
+      .replace(
+        /\\/g,
+        "/"
+      )
+      .replace(
+        /^\/+/,
+        ""
+      );
 
   if (!normalizedPath) {
     return null;
   }
 
+  const normalized =
+    normalizedPath.toLowerCase();
+
   if (
+    normalized.startsWith(
+      "input/"
+    ) ||
+    normalized.startsWith(
+      "workspace/input/"
+    ) ||
+    normalized.includes(
+      "/input/"
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    !normalized.startsWith(
+      "output/"
+    ) &&
+    !normalized.startsWith(
+      "workspace/output/"
+    )
+  ) {
+    return null;
+  }
+
+  const pathParts =
     normalizedPath
-      .toLowerCase()
-      .startsWith("input/")
-  ) {
-    return null;
-  }
-
-  if (
-    normalizedPath
-      .toLowerCase()
-      .startsWith("workspace/input/")
-  ) {
-    return null;
-  }
-
-  if (
-    !normalizedPath
-      .toLowerCase()
-      .startsWith("output/") &&
-    !normalizedPath
-      .toLowerCase()
-      .startsWith("workspace/output/")
-  ) {
-    return null;
-  }
-
-  const pathParts = normalizedPath
-    .split("/")
-    .filter(Boolean)
-    .map((part) =>
-      encodeURIComponent(part)
-    );
+      .split("/")
+      .filter(Boolean)
+      .map(
+        (part) =>
+          encodeURIComponent(
+            part
+          )
+      );
 
   return `${API_URL}/api/chat/download/${pathParts.join(
     "/"
   )}`;
 }
 
-/*
- * Extract generated artifacts from the agent execution context.
- */
 function getAgentArtifacts(
   execution
 ) {
@@ -994,89 +1146,39 @@ function getAgentArtifacts(
     return [];
   }
 
-  const artifacts = [];
-
-  Object.entries(
+  return Object.entries(
     execution.context
-  ).forEach(
-    ([stepId, result]) => {
-      if (
-        !result ||
-        typeof result !== "object" ||
-        !result.file_path
-      ) {
-        return;
+  )
+    .map(
+      ([stepId, result]) => {
+        if (
+          !result ||
+          typeof result !==
+            "object" ||
+          !result.file_path
+        ) {
+          return null;
+        }
+
+        const artifact =
+          normalizeArtifact(
+            {
+              ...result,
+              step_id:
+                stepId,
+            }
+          );
+
+        if (
+          !artifact.downloadUrl
+        ) {
+          return null;
+        }
+
+        return artifact;
       }
-
-      const filePath = String(
-        result.file_path
-      )
-        .replace(/\\/g, "/")
-        .replace(/^\/+/, "");
-
-      const normalized =
-        filePath.toLowerCase();
-
-      if (
-        normalized.startsWith("input/") ||
-        normalized.startsWith("workspace/input/") ||
-        normalized.includes("/input/")
-      ) {
-        return;
-      }
-
-      if (
-        !normalized.startsWith("output/") &&
-        !normalized.startsWith("workspace/output/")
-      ) {
-        return;
-      }
-
-      const fileName =
-        result.file_name ||
-        filePath
-          .split("/")
-          .pop() ||
-        `artifact-${stepId}`;
-
-      const extension =
-        result.extension ||
-        (
-          fileName.includes(".")
-            ? `.${fileName.split(".").pop()}`
-            : ""
-        );
-
-      const downloadUrl =
-        getDownloadUrl(
-          filePath
-        );
-
-      if (!downloadUrl) {
-        return;
-      }
-
-      artifacts.push({
-        stepId,
-
-        filePath,
-
-        fileName,
-
-        extension,
-
-        sizeBytes:
-          typeof result.size_bytes ===
-          "number"
-            ? result.size_bytes
-            : null,
-
-        downloadUrl,
-      });
-    }
-  );
-
-  return artifacts;
+    )
+    .filter(Boolean);
 }
 
 function formatArtifactSize(
@@ -1090,7 +1192,9 @@ function formatArtifactSize(
     return "";
   }
 
-  if (sizeBytes < 1024) {
+  if (
+    sizeBytes < 1024
+  ) {
     return `${sizeBytes} B`;
   }
 
@@ -1109,9 +1213,116 @@ function formatArtifactSize(
   ).toFixed(2)} MB`;
 }
 
-/*
- * Render NOVA Markdown responses as proper rich content.
- */
+function normalizeVaultList(
+  payload
+) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (
+    Array.isArray(
+      payload?.vaults
+    )
+  ) {
+    return payload.vaults;
+  }
+
+  if (
+    Array.isArray(
+      payload?.items
+    )
+  ) {
+    return payload.items;
+  }
+
+  if (
+    Array.isArray(
+      payload?.data
+    )
+  ) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function normalizeVaultFiles(
+  payload
+) {
+  const rawFiles = Array.isArray(
+    payload
+  )
+    ? payload
+    : Array.isArray(
+        payload?.files
+      )
+      ? payload.files
+      : Array.isArray(
+          payload?.items
+        )
+        ? payload.items
+        : Array.isArray(
+            payload?.data
+          )
+          ? payload.data
+          : [];
+
+  return rawFiles.filter(
+    (file) =>
+      file &&
+      (
+        !file.status ||
+        file.status ===
+          "active"
+      )
+  );
+}
+
+function getVaultId(
+  vault
+) {
+  return String(
+    vault?.vault_id ||
+      vault?.id ||
+      ""
+  ).trim();
+}
+
+function getVaultName(
+  vault
+) {
+  return String(
+    vault?.name ||
+      vault?.vault_name ||
+      vault?.title ||
+      getVaultId(vault) ||
+      "Unnamed vault"
+  ).trim();
+}
+
+function getVaultFileId(
+  file
+) {
+  return String(
+    file?.file_id ||
+      file?.id ||
+      ""
+  ).trim();
+}
+
+function getVaultFileName(
+  file
+) {
+  return String(
+    file?.filename ||
+      file?.name ||
+      file?.original_filename ||
+      getVaultFileId(file) ||
+      "Unnamed file"
+  ).trim();
+}
+
 function NovaMarkdown({
   content,
 }) {
@@ -1207,7 +1418,9 @@ function NovaMarkdown({
             </blockquote>
           ),
 
-          hr: () => <hr />,
+          hr: () => (
+            <hr />
+          ),
 
           a: ({
             href,
@@ -1315,22 +1528,32 @@ export default function ChatWindow({
   onConversationSaved,
   onNewConversation,
 }) {
-  const [messages, setMessages] =
-    useState([
-      welcomeMessage,
-    ]);
+  const [
+    messages,
+    setMessages,
+  ] = useState([
+    welcomeMessage,
+  ]);
 
-  const [input, setInput] =
-    useState("");
+  const [
+    input,
+    setInput,
+  ] = useState("");
 
-  const [status, setStatus] =
-    useState("IDLE");
+  const [
+    status,
+    setStatus,
+  ] = useState("IDLE");
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
-  const [isSending, setIsSending] =
-    useState(false);
+  const [
+    isSending,
+    setIsSending,
+  ] = useState(false);
 
   const [
     selectedFiles,
@@ -1341,6 +1564,51 @@ export default function ChatWindow({
     isLoadingConversation,
     setIsLoadingConversation,
   ] = useState(false);
+
+  const [
+    activeModel,
+    setActiveModel,
+  ] = useState(null);
+
+  const [
+    vaults,
+    setVaults,
+  ] = useState([]);
+
+  const [
+    selectedVaultId,
+    setSelectedVaultId,
+  ] = useState("");
+
+  const [
+    vaultFiles,
+    setVaultFiles,
+  ] = useState([]);
+
+  const [
+    selectedVaultFileIds,
+    setSelectedVaultFileIds,
+  ] = useState([]);
+
+  const [
+    isLoadingVaults,
+    setIsLoadingVaults,
+  ] = useState(false);
+
+  const [
+    isLoadingVaultFiles,
+    setIsLoadingVaultFiles,
+  ] = useState(false);
+
+  const [
+    vaultContextOpen,
+    setVaultContextOpen,
+  ] = useState(false);
+
+  const [
+    vaultError,
+    setVaultError,
+  ] = useState("");
 
   const messagesEndRef =
     useRef(null);
@@ -1367,7 +1635,194 @@ export default function ChatWindow({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
+
+    const loadVaults =
+      async () => {
+        setIsLoadingVaults(
+          true
+        );
+
+        setVaultError("");
+
+        try {
+          const response =
+            await fetch(
+              `${API_URL}/api/knowledge/vaults`
+            );
+
+          if (!response.ok) {
+            throw new Error(
+              "Unable to load Knowledge Vaults."
+            );
+          }
+
+          const data =
+            await response.json();
+
+          const normalized =
+            normalizeVaultList(
+              data
+            );
+
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+          setVaults(
+            normalized
+          );
+        } catch (
+          requestError
+        ) {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+          console.error(
+            "Knowledge Vault loading error:",
+            requestError
+          );
+
+          setVaultError(
+            requestError?.message ||
+              "Unable to load Knowledge Vaults."
+          );
+
+          setVaults([]);
+        } finally {
+          if (
+            !cancelled
+          ) {
+            setIsLoadingVaults(
+              false
+            );
+          }
+        }
+      };
+
+    loadVaults();
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled =
+      false;
+
+    const loadVaultFiles =
+      async () => {
+        setSelectedVaultFileIds(
+          []
+        );
+
+        setVaultFiles(
+          []
+        );
+
+        setVaultError("");
+
+        if (
+          !selectedVaultId
+        ) {
+          setIsLoadingVaultFiles(
+            false
+          );
+
+          return;
+        }
+
+        setIsLoadingVaultFiles(
+          true
+        );
+
+        try {
+          const response =
+            await fetch(
+              `${API_URL}/api/knowledge/vaults/${encodeURIComponent(
+                selectedVaultId
+              )}/files`
+            );
+
+          if (!response.ok) {
+            const errorText =
+              await response.text();
+
+            throw new Error(
+              errorText ||
+                "Unable to load files from the selected vault."
+            );
+          }
+
+          const data =
+            await response.json();
+
+          const normalized =
+            normalizeVaultFiles(
+              data
+            );
+
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+          setVaultFiles(
+            normalized
+          );
+        } catch (
+          requestError
+        ) {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+          console.error(
+            "Knowledge Vault file loading error:",
+            requestError
+          );
+
+          setVaultError(
+            requestError?.message ||
+              "Unable to load files from the selected vault."
+          );
+
+          setVaultFiles([]);
+        } finally {
+          if (
+            !cancelled
+          ) {
+            setIsLoadingVaultFiles(
+              false
+            );
+          }
+        }
+      };
+
+    loadVaultFiles();
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, [
+    selectedVaultId,
+  ]);
+
+  useEffect(() => {
+    let cancelled =
+      false;
 
     const loadConversation =
       async () => {
@@ -1376,9 +1831,15 @@ export default function ChatWindow({
             welcomeMessage,
           ]);
 
-          setStatus("IDLE");
+          setStatus(
+            "IDLE"
+          );
 
           setError("");
+
+          setActiveModel(
+            null
+          );
 
           emitAvatarState(
             "idle"
@@ -1400,7 +1861,9 @@ export default function ChatWindow({
         try {
           const response =
             await fetch(
-              `${API_URL}/api/history/conversations/${conversationId}`
+              `${API_URL}/api/history/conversations/${encodeURIComponent(
+                conversationId
+              )}`
             );
 
           if (!response.ok) {
@@ -1421,10 +1884,14 @@ export default function ChatWindow({
               ? data.messages.map(
                   mapHistoryMessage
                 )
-              : [welcomeMessage]
+              : [
+                  welcomeMessage,
+                ]
           );
 
-          setStatus("IDLE");
+          setStatus(
+            "IDLE"
+          );
 
           emitAvatarState(
             "idle"
@@ -1465,15 +1932,20 @@ export default function ChatWindow({
     loadConversation();
 
     return () => {
-      cancelled = true;
+      cancelled =
+        true;
     };
-  }, [conversationId]);
+  }, [
+    conversationId,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView(
       {
-        behavior: "smooth",
-        block: "end",
+        behavior:
+          "smooth",
+        block:
+          "end",
       }
     );
   }, [
@@ -1482,103 +1954,204 @@ export default function ChatWindow({
     isLoadingConversation,
   ]);
 
-  const autoResize = () => {
-    const textarea =
-      textareaRef.current;
+  const autoResize =
+    () => {
+      const textarea =
+        textareaRef.current;
 
-    if (!textarea) {
-      return;
-    }
-
-    textarea.style.height =
-      "auto";
-
-    textarea.style.height = `${Math.min(
-      textarea.scrollHeight,
-      180
-    )}px`;
-  };
-
-  const handleInputChange = (
-    event
-  ) => {
-    setInput(
-      event.target.value
-    );
-
-    requestAnimationFrame(
-      autoResize
-    );
-  };
-
-  const handleFileSelection = (
-    event
-  ) => {
-    const files = Array.from(
-      event.target.files || []
-    );
-
-    if (!files.length) {
-      return;
-    }
-
-    setError("");
-
-    const maxSize =
-      20 * 1024 * 1024;
-
-    const validFiles =
-      files.filter(
-        (file) =>
-          file.size <= maxSize
-      );
-
-    const oversizedFiles =
-      files.filter(
-        (file) =>
-          file.size > maxSize
-      );
-
-    if (
-      oversizedFiles.length
-    ) {
-      setError(
-        "One or more files exceed the 20 MB limit."
-      );
-    }
-
-    setSelectedFiles(
-      (current) => {
-        const existing =
-          new Set(
-            current.map(
-              (file) =>
-                `${file.name}-${file.size}`
-            )
-          );
-
-        const next = [
-          ...current,
-        ];
-
-        for (
-          const file of validFiles
-        ) {
-          const key = `${file.name}-${file.size}`;
-
-          if (
-            !existing.has(key)
-          ) {
-            next.push(file);
-          }
-        }
-
-        return next;
+      if (!textarea) {
+        return;
       }
-    );
 
-    event.target.value = "";
-  };
+      textarea.style.height =
+        "auto";
+
+      textarea.style.height =
+        `${Math.min(
+          textarea.scrollHeight,
+          180
+        )}px`;
+    };
+
+  const handleInputChange =
+    (
+      event
+    ) => {
+      setInput(
+        event.target.value
+      );
+
+      requestAnimationFrame(
+        autoResize
+      );
+    };
+
+  const handleVaultChange =
+    (
+      event
+    ) => {
+      const nextVaultId =
+        String(
+          event.target.value ||
+            ""
+        ).trim();
+
+      setSelectedVaultId(
+        nextVaultId
+      );
+
+      setSelectedVaultFileIds(
+        []
+      );
+
+      setVaultError("");
+
+      if (
+        !nextVaultId
+      ) {
+        setVaultContextOpen(
+          false
+        );
+      }
+    };
+
+  const toggleVaultFile =
+    (
+      fileId
+    ) => {
+      const normalizedId =
+        String(
+          fileId || ""
+        ).trim();
+
+      if (
+        !normalizedId
+      ) {
+        return;
+      }
+
+      setSelectedVaultFileIds(
+        (current) =>
+          current.includes(
+            normalizedId
+          )
+            ? current.filter(
+                (id) =>
+                  id !==
+                  normalizedId
+              )
+            : [
+                ...current,
+                normalizedId,
+              ]
+      );
+
+      setVaultError("");
+    };
+
+  const clearKnowledgeScope =
+    () => {
+      setSelectedVaultId(
+        ""
+      );
+
+      setSelectedVaultFileIds(
+        []
+      );
+
+      setVaultFiles(
+        []
+      );
+
+      setVaultContextOpen(
+        false
+      );
+
+      setVaultError("");
+    };
+
+  const handleFileSelection =
+    (
+      event
+    ) => {
+      const files =
+        Array.from(
+          event.target.files ||
+            []
+        );
+
+      if (!files.length) {
+        return;
+      }
+
+      setError("");
+
+      const maxSize =
+        20 *
+        1024 *
+        1024;
+
+      const validFiles =
+        files.filter(
+          (file) =>
+            file.size <=
+            maxSize
+        );
+
+      const oversizedFiles =
+        files.filter(
+          (file) =>
+            file.size >
+            maxSize
+        );
+
+      if (
+        oversizedFiles.length
+      ) {
+        setError(
+          "One or more files exceed the 20 MB limit."
+        );
+      }
+
+      setSelectedFiles(
+        (current) => {
+          const existing =
+            new Set(
+              current.map(
+                (file) =>
+                  `${file.name}-${file.size}`
+              )
+            );
+
+          const next = [
+            ...current,
+          ];
+
+          for (
+            const file of
+              validFiles
+          ) {
+            const key =
+              `${file.name}-${file.size}`;
+
+            if (
+              !existing.has(
+                key
+              )
+            ) {
+              next.push(
+                file
+              );
+            }
+          }
+
+          return next;
+        }
+      );
+
+      event.target.value =
+        "";
+    };
 
   const removeFile = (
     fileToRemove
@@ -1597,9 +2170,6 @@ export default function ChatWindow({
     );
   };
 
-  /*
-   * Upload currently selected files to NOVA.
-   */
   const uploadSelectedFiles =
     async () => {
       if (
@@ -1608,10 +2178,12 @@ export default function ChatWindow({
         return [];
       }
 
-      const uploaded = [];
+      const uploaded =
+        [];
 
       for (
-        const file of selectedFiles
+        const file of
+          selectedFiles
       ) {
         const formData =
           new FormData();
@@ -1625,8 +2197,10 @@ export default function ChatWindow({
           await fetch(
             `${API_URL}/api/chat/upload`,
             {
-              method: "POST",
-              body: formData,
+              method:
+                "POST",
+              body:
+                formData,
             }
           );
 
@@ -1656,7 +2230,8 @@ export default function ChatWindow({
             data.file.file_id,
 
           filename:
-            data.file.filename,
+            data.file.filename ||
+            file.name,
 
           content_type:
             data.file
@@ -1665,110 +2240,123 @@ export default function ChatWindow({
 
           extension:
             data.file.extension ||
-            `.${file.name
-              .split(".")
-              .pop()
-              ?.toLowerCase()}`,
+            (
+              file.name.includes(
+                "."
+              )
+                ? `.${file.name
+                    .split(".")
+                    .pop()
+                    ?.toLowerCase()}`
+                : ""
+            ),
 
           file_type:
             data.file.file_type ||
             "",
+
+          size:
+            Number(
+              data.file.size ||
+                file.size ||
+                0
+            ),
         });
       }
 
       return uploaded;
     };
 
-  /*
-   * Run NOVA's agent endpoint.
-   */
-  const runAgent = async (
-    message,
-    uploadedFiles = []
-  ) => {
-    const directDocumentGeneration =
-      isDocumentGenerationRequest(
-        message
-      );
+  const runAgent =
+    async (
+      message,
+      uploadedFiles = []
+    ) => {
+      const directDocumentGeneration =
+        isDocumentGenerationRequest(
+          message
+        );
 
-    const directCodeExecution =
-      isCodeExecutionRequest(
-        message
-      );
+      const directCodeExecution =
+        isCodeExecutionRequest(
+          message
+        );
 
-    const directSpreadsheetAnalysis =
-      isSpreadsheetRequest(
-        message
-      ) ||
-      uploadedFiles.some(
-        (file) =>
-          isSpreadsheetFile(
-            file
-          )
-      );
+      const directSpreadsheetAnalysis =
+        isSpreadsheetRequest(
+          message
+        ) ||
+        uploadedFiles.some(
+          (file) =>
+            isSpreadsheetFile(
+              file
+            )
+        );
 
-    /*
-     * PowerPoint generation must also auto-confirm because
-     * pptx_writer is registered as a confirmation-gated tool.
-     */
-    const directPresentationGeneration =
-      isPresentationGenerationRequest(
-        message
-      );
+      const directPresentationGeneration =
+        isPresentationGenerationRequest(
+          message
+        );
 
-    const response =
-      await fetch(
-        `${API_URL}/api/agents/run`,
-        {
-          method: "POST",
+      const response =
+        await fetch(
+          `${API_URL}/api/agents/run`,
+          {
+            method:
+              "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            objective:
-              message ||
-              "Analyze the attached spreadsheet.",
-
-            context: {
-              conversation_id:
-                conversationId ||
-                null,
-
-              source:
-                "nova-local-chat",
-
-              attachments:
-                uploadedFiles,
+            headers: {
+              "Content-Type":
+                "application/json",
             },
 
-            auto_confirm:
-              directDocumentGeneration ||
-              directCodeExecution ||
-              directSpreadsheetAnalysis ||
-              directPresentationGeneration,
-          }),
-        }
-      );
+            body:
+              JSON.stringify({
+                objective:
+                  message ||
+                  "Analyze the attached spreadsheet.",
 
-    const data =
-      await response.json();
+                context: {
+                  conversation_id:
+                    conversationId ||
+                    null,
 
-    if (!response.ok) {
-      throw new Error(
-        data?.detail ||
-          "NOVA agent could not process the request."
-      );
-    }
+                  source:
+                    "nova-local-chat",
 
-    return data;
-  };
+                  attachments:
+                    uploadedFiles,
 
-  /*
-   * Run the existing normal chat endpoint.
-   */
+                  knowledge_vault_id:
+                    selectedVaultId ||
+                    null,
+
+                  knowledge_file_ids:
+                    selectedVaultFileIds,
+                },
+
+                auto_confirm:
+                  directDocumentGeneration ||
+                  directCodeExecution ||
+                  directSpreadsheetAnalysis ||
+                  directPresentationGeneration,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail ||
+            "NOVA agent could not process the request."
+        );
+      }
+
+      return data;
+    };
+
   const runNormalChat =
     async (
       message,
@@ -1778,25 +2366,35 @@ export default function ChatWindow({
         await fetch(
           `${API_URL}/api/chat/`,
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify({
-              message,
+            body:
+              JSON.stringify({
+                message,
 
-              model: MODEL,
+                model:
+                  MODEL,
 
-              conversation_id:
-                conversationId ||
-                null,
+                conversation_id:
+                  conversationId ||
+                  null,
 
-              attachments:
-                uploadedFiles,
-            }),
+                attachments:
+                  uploadedFiles,
+
+                vault_id:
+                  selectedVaultId ||
+                  null,
+
+                file_ids:
+                  selectedVaultFileIds,
+              }),
           }
         );
 
@@ -1818,31 +2416,67 @@ export default function ChatWindow({
       const message =
         input.trim();
 
+      const hasDirectFiles =
+        selectedFiles.length >
+        0;
+
+      const hasSelectedVaultFiles =
+        selectedVaultFileIds.length >
+        0;
+
+      const hasSelectedVault =
+        Boolean(
+          selectedVaultId
+        );
+
+      const hasText =
+        Boolean(message);
+
       if (
-        (!message &&
-          !selectedFiles.length) ||
         isSending
       ) {
         return;
       }
 
+      if (
+        !hasText &&
+        !hasDirectFiles &&
+        !hasSelectedVaultFiles
+      ) {
+        if (
+          hasSelectedVault
+        ) {
+          setError(
+            "Enter a question or select specific Knowledge Vault files before sending."
+          );
+        }
+
+        return;
+      }
+
       setError("");
 
-      setIsSending(true);
+      setIsSending(
+        true
+      );
 
       const useAgent =
         selectedFiles.length > 0 ||
-        isAgentRequest(message);
+        isAgentRequest(
+          message
+        );
 
       const initialStatus =
         useAgent
           ? "PLANNING"
-          : selectedFiles.length
-            ? "ANALYZING"
-            : "THINKING";
+          : "THINKING";
 
       setStatus(
         initialStatus
+      );
+
+      setActiveModel(
+        null
       );
 
       emitAvatarState(
@@ -1852,29 +2486,89 @@ export default function ChatWindow({
       const attachedFileMetadata =
         selectedFiles.map(
           (file) => ({
-            name: file.name,
-            size: file.size,
-            type: file.type,
+            name:
+              file.name,
+
+            size:
+              file.size,
+
+            type:
+              file.type,
           })
         );
 
-      const userMessage = {
-        id: createId(
-          "user"
-        ),
+      const selectedVaultNames =
+        vaults.filter(
+          (vault) =>
+            getVaultId(
+              vault
+            ) ===
+            selectedVaultId
+        );
 
-        role: "user",
+      const selectedVaultName =
+        selectedVaultNames.length
+          ? getVaultName(
+              selectedVaultNames[0]
+            )
+          : "";
+
+      const selectedKnowledgeFiles =
+        vaultFiles
+          .filter(
+            (file) =>
+              selectedVaultFileIds.includes(
+                getVaultFileId(
+                  file
+                )
+              )
+          )
+          .map(
+            (file) =>
+              getVaultFileName(
+                file
+              )
+          );
+
+      const userMessage = {
+        id:
+          createId(
+            "user"
+          ),
+
+        role:
+          "user",
 
         content:
           message ||
-          "Please analyze the attached file.",
+          (
+            selectedVaultFileIds.length
+              ? "Please analyze the selected Knowledge Vault files."
+              : "Please analyze the attached file."
+          ),
 
-        time: new Date(),
+        time:
+          new Date(),
 
         attachments:
           attachedFileMetadata,
 
-        agent: null,
+        knowledgeScope:
+          selectedVaultId
+            ? {
+                vaultName:
+                  selectedVaultName,
+
+                vaultId:
+                  selectedVaultId,
+
+                fileNames:
+                  selectedKnowledgeFiles,
+              }
+            : null,
+
+        agent:
+          null,
       };
 
       setMessages(
@@ -1898,12 +2592,6 @@ export default function ChatWindow({
       );
 
       try {
-        /*
-         * =============================================================
-         * AGENTIC PIPELINE
-         * =============================================================
-         */
-
         if (useAgent) {
           setStatus(
             "ANALYZING"
@@ -1931,7 +2619,9 @@ export default function ChatWindow({
             (
               hasSpreadsheetAttachment
                 ? "Analyze the attached spreadsheet and provide a useful summary."
-                : "Process this agent task."
+                : selectedVaultFileIds.length
+                  ? "Analyze the selected Knowledge Vault files and provide a useful summary."
+                  : "Process this agent task."
             );
 
           const agentData =
@@ -1969,124 +2659,8 @@ export default function ChatWindow({
 
           const assistantArtifacts =
             backendArtifacts
-              .filter(
-                (art) => {
-                  const filePath =
-                    String(
-                      art.file_path ||
-                        art.filePath ||
-                        ""
-                    )
-                      .replace(
-                        /\\/g,
-                        "/"
-                      )
-                      .replace(
-                        /^\/+/,
-                        ""
-                      );
-
-                  const normalized =
-                    filePath.toLowerCase();
-
-                  return (
-                    filePath &&
-                    !normalized.startsWith(
-                      "input/"
-                    ) &&
-                    !normalized.startsWith(
-                      "workspace/input/"
-                    ) &&
-                    !normalized.includes(
-                      "/input/"
-                    ) &&
-                    (
-                      normalized.startsWith(
-                        "output/"
-                      ) ||
-                      normalized.startsWith(
-                        "workspace/output/"
-                      )
-                    )
-                  );
-                }
-              )
               .map(
-                (
-                  art,
-                  index
-                ) => {
-                  const filePath =
-                    String(
-                      art.file_path ||
-                        art.filePath ||
-                        ""
-                    )
-                      .replace(
-                        /\\/g,
-                        "/"
-                      )
-                      .replace(
-                        /^\/+/,
-                        ""
-                      );
-
-                  const fileName =
-                    art.file_name ||
-                    art.fileName ||
-                    (
-                      filePath
-                        ? filePath
-                            .split(
-                              "/"
-                            )
-                            .pop()
-                        : `artifact-${index}`
-                    );
-
-                  const extension =
-                    art.extension ||
-                    (
-                      fileName.includes(
-                        "."
-                      )
-                        ? `.${fileName.split(".").pop()}`
-                        : ""
-                    );
-
-                  return {
-                    stepId:
-                      art.step_id ||
-                      art.stepId ||
-                      `step-${index}`,
-
-                    filePath,
-
-                    fileName,
-
-                    extension,
-
-                    sizeBytes:
-                      typeof art.size_bytes ===
-                      "number"
-                        ? art.size_bytes
-                        : null,
-
-                    verificationStatus:
-                      art.verification_status ||
-                      art.verificationStatus ||
-                      "verified",
-
-                    downloadUrl:
-                      getDownloadUrl(
-                        filePath
-                      ),
-
-                    available:
-                      art.available !==
-                      false,
-                  };
-                }
+                normalizeArtifact
               )
               .filter(
                 (artifact) =>
@@ -2095,20 +2669,31 @@ export default function ChatWindow({
                   )
               );
 
+          const executionArtifacts =
+            assistantArtifacts.length
+              ? assistantArtifacts
+              : getAgentArtifacts(
+                  agentData.execution
+                );
+
           const assistantMessage =
             {
-              id: createId(
-                "nova"
-              ),
+              id:
+                createId(
+                  "nova"
+                ),
 
-              role: "assistant",
+              role:
+                "assistant",
 
               content:
                 assistantText,
 
-              time: new Date(),
+              time:
+                new Date(),
 
-              attachments: [],
+              attachments:
+                [],
 
               agent: {
                 plan:
@@ -2120,11 +2705,7 @@ export default function ChatWindow({
                   null,
 
                 artifacts:
-                  assistantArtifacts.length
-                    ? assistantArtifacts
-                    : getAgentArtifacts(
-                        agentData.execution
-                      ),
+                  executionArtifacts,
               },
             };
 
@@ -2133,6 +2714,22 @@ export default function ChatWindow({
               ...current,
               assistantMessage,
             ]
+          );
+
+          const returnedModel =
+            agentData.model ||
+            agentData.model_name ||
+            agentData.active_model ||
+            agentData.routing
+              ?.model_name ||
+            null;
+
+          setActiveModel(
+            returnedModel
+              ? String(
+                  returnedModel
+                )
+              : null
           );
 
           window.dispatchEvent(
@@ -2156,11 +2753,15 @@ export default function ChatWindow({
             0.7
           );
 
-          setSelectedFiles([]);
+          setSelectedFiles(
+            []
+          );
 
           if (
             agentData.plan?.status ===
-            "failed"
+              "failed" ||
+            agentData.execution?.status ===
+              "failed"
           ) {
             setStatus(
               "ERROR"
@@ -2193,12 +2794,6 @@ export default function ChatWindow({
           return;
         }
 
-        /*
-         * =============================================================
-         * NORMAL CHAT PIPELINE
-         * =============================================================
-         */
-
         const uploadedFiles =
           await uploadSelectedFiles();
 
@@ -2206,10 +2801,17 @@ export default function ChatWindow({
           "thinking"
         );
 
+        const normalChatMessage =
+          message ||
+          (
+            selectedVaultFileIds.length
+              ? "Analyze the selected Knowledge Vault files and provide a useful summary."
+              : "Analyze the attached file."
+          );
+
         const data =
           await runNormalChat(
-            message ||
-              "Analyze the attached file.",
+            normalChatMessage,
             uploadedFiles
           );
 
@@ -2228,21 +2830,40 @@ export default function ChatWindow({
 
         const assistantMessage =
           {
-            id: createId(
-              "nova"
-            ),
+            id:
+              createId(
+                "nova"
+              ),
 
-            role: "assistant",
+            role:
+              "assistant",
 
             content:
               responseText,
 
-            time: new Date(),
+            time:
+              new Date(),
 
-            attachments: [],
+            attachments:
+              [],
 
-            agent: null,
+            agent:
+              null,
           };
+
+        const returnedModel =
+          data.model ||
+          data.model_name ||
+          data.active_model ||
+          null;
+
+        setActiveModel(
+          returnedModel
+            ? String(
+                returnedModel
+              )
+              : null
+        );
 
         window.dispatchEvent(
           new CustomEvent(
@@ -2263,7 +2884,9 @@ export default function ChatWindow({
           ]
         );
 
-        setSelectedFiles([]);
+        setSelectedFiles(
+          []
+        );
 
         if (
           data.conversation_id &&
@@ -2331,29 +2954,46 @@ export default function ChatWindow({
       }
     };
 
-  const handleKeyDown = (
-    event
-  ) => {
-    if (
-      event.key ===
-        "Enter" &&
-      !event.shiftKey
-    ) {
-      event.preventDefault();
+  const handleKeyDown =
+    (
+      event
+    ) => {
+      if (
+        event.key ===
+          "Enter" &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
 
-      sendMessage();
-    }
-  };
+        sendMessage();
+      }
+    };
 
   const handleNewConversation =
     () => {
       setInput("");
 
-      setSelectedFiles([]);
+      setSelectedFiles(
+        []
+      );
+
+      setSelectedVaultFileIds(
+        []
+      );
+
+      setVaultContextOpen(
+        false
+      );
 
       setError("");
 
-      setStatus("IDLE");
+      setStatus(
+        "IDLE"
+      );
+
+      setActiveModel(
+        null
+      );
 
       emitAvatarState(
         "idle",
@@ -2363,11 +3003,45 @@ export default function ChatWindow({
       onNewConversation();
     };
 
+  const selectedVault =
+    vaults.find(
+      (vault) =>
+        getVaultId(
+          vault
+        ) ===
+        selectedVaultId
+    );
+
+  const selectedVaultDisplay =
+    selectedVault
+      ? getVaultName(
+          selectedVault
+        )
+      : "ALL KNOWLEDGE";
+
+  const knowledgeScopeActive =
+    Boolean(
+      selectedVaultId ||
+        selectedVaultFileIds.length
+    );
+
+  const canSend =
+    !isSending &&
+    !isLoadingConversation &&
+    (
+      input.trim() ||
+      selectedFiles.length > 0 ||
+      selectedVaultFileIds.length > 0
+    );
+
+  const displayedModel =
+    activeModel ||
+    "LOCAL ROUTER";
+
   return (
     <div className="nova-chat-page">
-      {/* =========================================================
-          HERO
-      ========================================================== */}
+      {/* HERO */}
+
       <motion.section
         className="nova-chat-hero"
         initial={{
@@ -2379,8 +3053,10 @@ export default function ChatWindow({
           y: 0,
         }}
         transition={{
-          duration: 0.55,
-          ease: "easeOut",
+          duration:
+            0.55,
+          ease:
+            "easeOut",
         }}
       >
         <div className="nova-chat-hero-copy">
@@ -2420,20 +3096,19 @@ export default function ChatWindow({
 
             <div>
               <small>
-                ACTIVE MODEL
+                ACTIVE ROUTING
               </small>
 
               <strong>
-                LLAMA 3.2
+                {displayedModel}
               </strong>
             </div>
           </div>
         </div>
       </motion.section>
 
-      {/* =========================================================
-          RUNTIME STRIP
-      ========================================================== */}
+      {/* RUNTIME STRIP */}
+
       <motion.section
         className="nova-chat-command-strip"
         initial={{
@@ -2445,8 +3120,10 @@ export default function ChatWindow({
           y: 0,
         }}
         transition={{
-          duration: 0.5,
-          delay: 0.08,
+          duration:
+            0.5,
+          delay:
+            0.08,
         }}
       >
         <div className="nova-chat-command-item">
@@ -2461,7 +3138,7 @@ export default function ChatWindow({
             </small>
 
             <strong>
-              LLAMA 3.2
+              {displayedModel}
             </strong>
           </div>
         </div>
@@ -2512,7 +3189,9 @@ export default function ChatWindow({
             </small>
 
             <strong>
-              READY
+              {isSending
+                ? "WORKING"
+                : "READY"}
             </strong>
           </div>
         </div>
@@ -2529,7 +3208,9 @@ export default function ChatWindow({
             </small>
 
             <strong>
-              OLLAMA
+              {activeModel
+                ? "LOCAL"
+                : "ROUTED LOCALLY"}
             </strong>
           </div>
         </div>
@@ -2537,13 +3218,12 @@ export default function ChatWindow({
         <div className="nova-chat-security">
           <span className="nova-chat-security-line" />
 
-          NO CLOUD CHAT
+          LOCAL CHAT BOUNDARY
         </div>
       </motion.section>
 
-      {/* =========================================================
-          MAIN CHAT SHELL
-      ========================================================== */}
+      {/* MAIN CHAT SHELL */}
+
       <motion.section
         className="nova-chat-shell"
         initial={{
@@ -2555,8 +3235,10 @@ export default function ChatWindow({
           y: 0,
         }}
         transition={{
-          duration: 0.55,
-          delay: 0.15,
+          duration:
+            0.55,
+          delay:
+            0.15,
         }}
       >
         <div className="nova-chat-shell-top">
@@ -2610,7 +3292,9 @@ export default function ChatWindow({
               messages.map(
                 (message) => (
                   <motion.div
-                    key={message.id}
+                    key={
+                      message.id
+                    }
                     className={`nova-chat-message ${
                       message.role ===
                       "user"
@@ -2626,8 +3310,10 @@ export default function ChatWindow({
                       y: 0,
                     }}
                     transition={{
-                      duration: 0.3,
-                      ease: "easeOut",
+                      duration:
+                        0.3,
+                      ease:
+                        "easeOut",
                     }}
                   >
                     <div className="nova-chat-message-top">
@@ -2680,6 +3366,43 @@ export default function ChatWindow({
                       </div>
                     )}
 
+                    {message.role ===
+                      "user" &&
+                      message.knowledgeScope && (
+                        <div className="nova-chat-message-files nova-chat-knowledge-message-ref">
+                          <div className="nova-chat-message-file">
+                            <Database
+                              size={14}
+                              {...ICON_PROPS}
+                            />
+
+                            <span>
+                              KNOWLEDGE SCOPE ·{" "}
+                              {
+                                message
+                                  .knowledgeScope
+                                  .vaultName
+                              }
+
+                              {message
+                                .knowledgeScope
+                                .fileNames
+                                ?.length > 0
+                                ? ` · ${message.knowledgeScope.fileNames.length} FILE${
+                                    message
+                                      .knowledgeScope
+                                      .fileNames
+                                      .length ===
+                                    1
+                                      ? ""
+                                      : "S"
+                                  }`
+                                : ""}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                     <div className="nova-chat-message-content">
                       {message.role ===
                       "assistant" ? (
@@ -2705,8 +3428,10 @@ export default function ChatWindow({
                           y: 0,
                         }}
                         transition={{
-                          duration: 0.3,
-                          ease: "easeOut",
+                          duration:
+                            0.3,
+                          ease:
+                            "easeOut",
                         }}
                       >
                         <div className="nova-workflow-header">
@@ -2744,27 +3469,21 @@ export default function ChatWindow({
                         <div className="nova-workflow-meta">
                           <h4 className="nova-workflow-name">
                             {getWorkflowTitle(
-                              message.agent
-                                .plan,
-                              message.agent
-                                .execution,
-                              message.agent
-                                .artifacts
+                              message.agent.plan,
+                              message.agent.execution,
+                              message.agent.artifacts
                             )}
                           </h4>
 
                           <p className="nova-workflow-subtitle">
                             {getWorkflowSubtitle(
-                              message.agent
-                                .plan
-                                .status
+                              message.agent.plan.status
                             )}
                           </p>
                         </div>
 
                         {message.agent
-                          .plan
-                          .steps?.length >
+                          .plan.steps?.length >
                           0 && (
                           <div className="nova-workflow-steps">
                             {message.agent.plan.steps.map(
@@ -2794,15 +3513,20 @@ export default function ChatWindow({
                                       idx
                                     }
                                     initial={{
-                                      opacity: 0,
-                                      x: -5,
+                                      opacity:
+                                        0,
+                                      x:
+                                        -5,
                                     }}
                                     animate={{
-                                      opacity: 1,
-                                      x: 0,
+                                      opacity:
+                                        1,
+                                      x:
+                                        0,
                                     }}
                                     transition={{
-                                      duration: 0.25,
+                                      duration:
+                                        0.25,
                                       delay:
                                         idx *
                                         0.05,
@@ -2858,11 +3582,7 @@ export default function ChatWindow({
                           <div className="nova-workflow-metrics">
                             <div className="nova-workflow-metric-card metric-completed">
                               <span className="nova-workflow-metric-val">
-                                {message
-                                  .agent
-                                  .execution
-                                  .completed_steps
-                                  ?.length ??
+                                {message.agent.execution.completed_steps?.length ??
                                   0}
                               </span>
 
@@ -2873,11 +3593,7 @@ export default function ChatWindow({
 
                             <div className="nova-workflow-metric-card metric-failed">
                               <span className="nova-workflow-metric-val">
-                                {message
-                                  .agent
-                                  .execution
-                                  .failed_steps
-                                  ?.length ??
+                                {message.agent.execution.failed_steps?.length ??
                                   0}
                               </span>
 
@@ -2888,11 +3604,7 @@ export default function ChatWindow({
 
                             <div className="nova-workflow-metric-card metric-blocked">
                               <span className="nova-workflow-metric-val">
-                                {message
-                                  .agent
-                                  .execution
-                                  .blocked_steps
-                                  ?.length ??
+                                {message.agent.execution.blocked_steps?.length ??
                                   0}
                               </span>
 
@@ -2912,7 +3624,7 @@ export default function ChatWindow({
                               </span>
 
                               <small>
-                                LOCAL WORKSPACE
+                                VERIFIED LOCAL WORKSPACE
                               </small>
                             </div>
 
@@ -2949,10 +3661,15 @@ export default function ChatWindow({
                                               artifact.sizeBytes
                                             )}`
                                           : ""}
+
+                                        {" · "}
+
+                                        {artifact.verificationStatus.toUpperCase()}
                                       </small>
                                     </div>
 
-                                    {artifact.available !== false &&
+                                    {artifact.available !==
+                                      false &&
                                     artifact.downloadUrl ? (
                                       <a
                                         className="nova-agent-artifact-download"
@@ -3002,27 +3719,37 @@ export default function ChatWindow({
               <motion.div
                 className="nova-chat-thinking"
                 initial={{
-                  opacity: 0,
-                  y: 5,
+                  opacity:
+                    0,
+                  y:
+                    5,
                 }}
                 animate={{
-                  opacity: 1,
-                  y: 0,
+                  opacity:
+                    1,
+                  y:
+                    0,
                 }}
                 transition={{
-                  duration: 0.25,
-                  ease: "easeOut",
+                  duration:
+                    0.25,
+                  ease:
+                    "easeOut",
                 }}
               >
                 <span className="nova-thinking-pulse" />
 
                 <strong>
-                  {status === "PLANNING"
+                  {status ===
+                  "PLANNING"
                     ? "NOVA IS PLANNING..."
                     : status ===
                         "EXECUTING"
                       ? "NOVA IS EXECUTING..."
-                      : "NOVA IS THINKING..."}
+                      : status ===
+                          "ANALYZING"
+                        ? "NOVA IS ANALYZING..."
+                        : "NOVA IS THINKING..."}
                 </strong>
 
                 <span
@@ -3056,9 +3783,7 @@ export default function ChatWindow({
           </div>
         </div>
 
-        {/* =======================================================
-            COMPOSER
-        ======================================================== */}
+        {/* COMPOSER */}
 
         <div className="nova-chat-composer">
           <div className="nova-chat-composer-header">
@@ -3073,6 +3798,310 @@ export default function ChatWindow({
             <span>
               AGENT TASKS AUTO-ROUTED · ENTER TO SEND
             </span>
+          </div>
+
+          {/* KNOWLEDGE VAULT SCOPE */}
+
+          <div className="nova-chat-knowledge-scope">
+            <div className="nova-chat-knowledge-scope-head">
+              <div className="nova-chat-knowledge-scope-label">
+                <Database
+                  size={14}
+                  {...ICON_PROPS}
+                />
+
+                <div>
+                  <strong>
+                    KNOWLEDGE VAULT CONTEXT
+                  </strong>
+
+                  <small>
+                    {knowledgeScopeActive
+                      ? selectedVaultDisplay
+                      : "GLOBAL KNOWLEDGE"}
+                  </small>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={`nova-chat-knowledge-toggle ${
+                  vaultContextOpen
+                    ? "is-open"
+                    : ""
+                }`}
+                onClick={() =>
+                  setVaultContextOpen(
+                    (current) =>
+                      !current
+                  )
+                }
+                disabled={
+                  isSending
+                }
+              >
+                <span>
+                  {knowledgeScopeActive
+                    ? selectedVaultFileIds.length
+                      ? `${selectedVaultFileIds.length} FILE${
+                          selectedVaultFileIds.length ===
+                          1
+                            ? ""
+                            : "S"
+                        } SELECTED`
+                      : "VAULT SELECTED"
+                    : "SELECT SCOPE"}
+                </span>
+
+                <ChevronDown
+                  size={14}
+                  {...ICON_PROPS}
+                />
+              </button>
+            </div>
+
+            {vaultContextOpen && (
+              <motion.div
+                className="nova-chat-knowledge-panel"
+                initial={{
+                  opacity: 0,
+                  y: -5,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                transition={{
+                  duration:
+                    0.2,
+                }}
+              >
+                <div className="nova-chat-knowledge-vault-row">
+                  <div className="nova-chat-knowledge-vault-select-wrap">
+                    <FolderOpen
+                      size={14}
+                      {...ICON_PROPS}
+                    />
+
+                    <select
+                      className="nova-chat-knowledge-vault-select"
+                      value={
+                        selectedVaultId
+                      }
+                      onChange={
+                        handleVaultChange
+                      }
+                      disabled={
+                        isSending ||
+                        isLoadingVaults
+                      }
+                    >
+                      <option value="">
+                        GLOBAL KNOWLEDGE
+                      </option>
+
+                      {vaults.map(
+                        (
+                          vault
+                        ) => {
+                          const vaultId =
+                            getVaultId(
+                              vault
+                            );
+
+                          if (
+                            !vaultId
+                          ) {
+                            return null;
+                          }
+
+                          return (
+                            <option
+                              key={
+                                vaultId
+                              }
+                              value={
+                                vaultId
+                              }
+                            >
+                              {getVaultName(
+                                vault
+                              )}
+                            </option>
+                          );
+                        }
+                      )}
+                    </select>
+
+                    {isLoadingVaults && (
+                      <LoaderCircle
+                        size={14}
+                        className="nova-spin"
+                        {...ICON_PROPS}
+                      />
+                    )}
+                  </div>
+
+                  {knowledgeScopeActive && (
+                    <button
+                      type="button"
+                      className="nova-chat-knowledge-clear"
+                      onClick={
+                        clearKnowledgeScope
+                      }
+                      disabled={
+                        isSending
+                      }
+                    >
+                      CLEAR
+                    </button>
+                  )}
+                </div>
+
+                {selectedVaultId && (
+                  <>
+                    <div className="nova-chat-knowledge-files-header">
+                      <div>
+                        <strong>
+                          FILE FILTER
+                        </strong>
+
+                        <small>
+                          Leave empty to search the complete selected vault.
+                        </small>
+                      </div>
+
+                      {isLoadingVaultFiles ? (
+                        <LoaderCircle
+                          size={14}
+                          className="nova-spin"
+                          {...ICON_PROPS}
+                        />
+                      ) : (
+                        <span>
+                          {
+                            vaultFiles.length
+                          }{" "}
+                          FILE
+                          {vaultFiles.length ===
+                          1
+                            ? ""
+                            : "S"}
+                        </span>
+                      )}
+                    </div>
+
+                    {!isLoadingVaultFiles &&
+                      vaultFiles.length >
+                        0 && (
+                        <div className="nova-chat-knowledge-files">
+                          {vaultFiles.map(
+                            (
+                              file
+                            ) => {
+                              const fileId =
+                                getVaultFileId(
+                                  file
+                                );
+
+                              if (
+                                !fileId
+                              ) {
+                                return null;
+                              }
+
+                              const checked =
+                                selectedVaultFileIds.includes(
+                                  fileId
+                                );
+
+                              return (
+                                <label
+                                  className={`nova-chat-knowledge-file ${
+                                    checked
+                                      ? "is-selected"
+                                      : ""
+                                  }`}
+                                  key={
+                                    fileId
+                                  }
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      checked
+                                    }
+                                    onChange={() =>
+                                      toggleVaultFile(
+                                        fileId
+                                      )
+                                    }
+                                    disabled={
+                                      isSending
+                                    }
+                                  />
+
+                                  <span className="nova-chat-knowledge-file-check">
+                                    {checked
+                                      ? "✓"
+                                      : ""}
+                                  </span>
+
+                                  <FileText
+                                    size={14}
+                                    {...ICON_PROPS}
+                                  />
+
+                                  <span className="nova-chat-knowledge-file-name">
+                                    {getVaultFileName(
+                                      file
+                                    )}
+                                  </span>
+                                </label>
+                              );
+                            }
+                          )}
+                        </div>
+                      )}
+
+                    {!isLoadingVaultFiles &&
+                      vaultFiles.length ===
+                        0 && (
+                        <div className="nova-chat-knowledge-empty">
+                          No active files are available in this vault.
+                        </div>
+                      )}
+
+                    {selectedVaultFileIds.length >
+                      0 && (
+                      <div className="nova-chat-knowledge-selection">
+                        <Sparkles
+                          size={13}
+                          {...ICON_PROPS}
+                        />
+
+                        <span>
+                          Chat will search only the selected files.
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {vaultError && (
+                  <div className="nova-chat-knowledge-error">
+                    <AlertCircle
+                      size={13}
+                      {...ICON_PROPS}
+                    />
+
+                    <span>
+                      {vaultError}
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </div>
 
           {selectedFiles.length >
@@ -3119,7 +4148,9 @@ export default function ChatWindow({
                       aria-label={`Remove ${file.name}`}
                     >
                       <X
-                        size={13}
+                        size={
+                          13
+                        }
                         {...ICON_PROPS}
                       />
                     </button>
@@ -3142,7 +4173,9 @@ export default function ChatWindow({
               title="Attach file"
             >
               <Paperclip
-                size={17}
+                size={
+                  17
+                }
                 {...ICON_PROPS}
               />
             </button>
@@ -3154,7 +4187,7 @@ export default function ChatWindow({
               type="file"
               hidden
               multiple
-              accept=".pdf,.txt,.docx,.csv,.xlsx,image/png,image/jpeg,image/webp"
+              accept=".pdf,.txt,.docx,.csv,.xlsx,.xls,image/png,image/jpeg,image/webp"
               onChange={
                 handleFileSelection
               }
@@ -3165,14 +4198,20 @@ export default function ChatWindow({
                 textareaRef
               }
               className="nova-chat-composer-input"
-              value={input}
+              value={
+                input
+              }
               onChange={
                 handleInputChange
               }
               onKeyDown={
                 handleKeyDown
               }
-              placeholder="Ask NOVA anything..."
+              placeholder={
+                knowledgeScopeActive
+                  ? "Ask NOVA about the selected local knowledge..."
+                  : "Ask NOVA anything..."
+              }
               rows={1}
               disabled={
                 isSending ||
@@ -3187,22 +4226,23 @@ export default function ChatWindow({
                 sendMessage
               }
               disabled={
-                isSending ||
-                isLoadingConversation ||
-                (!input.trim() &&
-                  !selectedFiles.length)
+                !canSend
               }
               aria-label="Send message"
             >
               {isSending ? (
                 <LoaderCircle
-                  size={18}
+                  size={
+                    18
+                  }
                   className="nova-spin"
                   {...ICON_PROPS}
                 />
               ) : (
                 <ArrowUp
-                  size={18}
+                  size={
+                    18
+                  }
                   {...ICON_PROPS}
                 />
               )}
@@ -3215,8 +4255,15 @@ export default function ChatWindow({
             </span>
 
             <span>
-              LOCAL MODEL / AGENT READY / NO CLOUD
-              TRANSMISSION
+              {knowledgeScopeActive
+                ? `LOCAL KNOWLEDGE SCOPE / ${
+                    selectedVaultDisplay
+                  } / ${
+                    selectedVaultFileIds.length
+                      ? `${selectedVaultFileIds.length} FILE FILTER`
+                      : "VAULT SEARCH"
+                  }`
+                : "LOCAL MODEL ROUTING / AGENT READY / NO EXTERNAL CHAT"}
             </span>
           </div>
         </div>

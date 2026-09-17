@@ -1,0 +1,41 @@
+{
+  "version": 5,
+  "updated_at": "2026-09-17T05:15:41.223816+00:00",
+  "vaults": [
+    {
+      "vault_id": "8403d434b2c441fba56ff0b0a6d81643",
+      "name": "hi",
+      "status": "active",
+      "created_at": "2026-09-17T05:14:45.948710+00:00",
+      "updated_at": "2026-09-17T05:14:45.948710+00:00",
+      "deleted_at": null
+    }
+  ],
+  "files": [
+    {
+      "file_id": "2a463717045b43e6aa0f808fad864247",
+      "vault_id": "8403d434b2c441fba56ff0b0a6d81643",
+      "filename": "Thiranex_Certificate_Abhinav_Reddy_Gogulamudi_THX-AUG1726-017.pdf",
+      "original_filename": "Thiranex_Certificate_Abhinav_Reddy_Gogulamudi_THX-AUG1726-017.pdf",
+      "stored_name": "2a463717045b43e6aa0f808fad864247_Thiranex_Certificate_Abhinav_Reddy_Gogulamudi_THX-AUG1726-017.pdf",
+      "stored_relative_path": "knowledge/chat_uploads/2a463717045b43e6aa0f808fad864247_Thiranex_Certificate_Abhinav_Reddy_Gogulamudi_THX-AUG1726-017.pdf",
+      "content_type": "application/pdf",
+      "extension": ".pdf",
+      "file_type": "document",
+      "size": 535254,
+      "characters": 332,
+      "chunks": 1,
+      "indexed": true,
+      "indexed_at": "2026-09-17T05:15:41.223759+00:00",
+      "content_sha256": "7f7b3dfd50c06c951ac8f3e2302e46c6f7646b65fe46631b79c76a9431c34df7",
+      "status": "active",
+      "created_at": "2026-09-17T05:15:30.918690+00:00",
+      "updated_at": "2026-09-17T05:15:41.223766+00:00",
+      "deleted_at": null,
+      "deleted_from_vault_id": null,
+      "deleted_from_vault_name": "",
+      "source": "knowledge-vault"
+    }
+  ],
+  "bin": []
+}

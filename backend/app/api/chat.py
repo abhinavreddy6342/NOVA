@@ -63,7 +63,18 @@ class ChatRequest(BaseModel):
 
     conversation_id: Optional[str] = None
 
-    attachments: List[AttachmentReference] = Field(
+    attachments: List[
+        AttachmentReference
+    ] = Field(
+        default_factory=list
+    )
+
+    # Optional Knowledge Vault context.
+    # Existing requests remain fully compatible because
+    # both fields are optional.
+    vault_id: Optional[str] = None
+
+    file_ids: List[str] = Field(
         default_factory=list
     )
 
@@ -79,7 +90,9 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 def utc_now():
-    return datetime.now(timezone.utc)
+    return datetime.now(
+        timezone.utc
+    )
 
 
 def generate_conversation_title(
@@ -111,7 +124,10 @@ def generate_conversation_title(
             "Attached file",
         )
 
-        return f"Analysis: {filename[:45]}"
+        return (
+            f"Analysis: "
+            f"{filename[:45]}"
+        )
 
     return "New conversation"
 
@@ -141,6 +157,14 @@ def should_use_knowledge(
         "schedule in",
         "exam schedule",
         "examination schedule",
+        "maintenance vault",
+        "safety vault",
+        "project vault",
+        "search my vault",
+        "search the vault",
+        "in my vault",
+        "inside the vault",
+        "from my vault",
     ]
 
     return any(
@@ -151,14 +175,51 @@ def should_use_knowledge(
 
 def build_rag_prompt(
     user_message: str,
+    vault_id: Optional[str] = None,
+    file_ids: Optional[List[str]] = None,
 ) -> str:
+    """
+    Retrieve local Knowledge Vault context.
+
+    vault_id:
+        Restricts retrieval to one real vault.
+
+    file_ids:
+        Restricts retrieved sources to explicitly selected files.
+
+    The vector layer remains the source for semantic retrieval;
+    this function only prepares grounded context for the LLM.
+    """
+
     try:
         results = retrieve_context(
             query=user_message,
-            top_k=3,
+            top_k=5,
+            vault_id=vault_id,
         )
     except Exception:
         results = []
+
+    selected_file_ids = {
+        str(file_id).strip()
+        for file_id in (
+            file_ids or []
+        )
+        if str(file_id).strip()
+    }
+
+    if selected_file_ids:
+        results = [
+            result
+            for result in results
+            if str(
+                result.get(
+                    "file_id",
+                    "",
+                )
+            ).strip()
+            in selected_file_ids
+        ]
 
     if not results:
         return user_message
@@ -170,9 +231,10 @@ def build_rag_prompt(
         start=1,
     ):
         source = result.get(
-            "source",
-            "Unknown document",
-        )
+            "filename"
+        ) or result.get(
+            "source"
+        ) or "Unknown document"
 
         text = result.get(
             "text",
@@ -182,8 +244,32 @@ def build_rag_prompt(
         if not text:
             continue
 
+        source_file_id = result.get(
+            "file_id"
+        )
+
+        source_vault_id = result.get(
+            "vault_id"
+        )
+
+        source_line = (
+            f"[SOURCE {index}: {source}]"
+        )
+
+        if source_file_id:
+            source_line += (
+                f"\nFILE ID: "
+                f"{source_file_id}"
+            )
+
+        if source_vault_id:
+            source_line += (
+                f"\nVAULT ID: "
+                f"{source_vault_id}"
+            )
+
         context_parts.append(
-            f"[SOURCE {index}: {source}]\n{text}"
+            f"{source_line}\n{text}"
         )
 
     if not context_parts:
@@ -193,19 +279,37 @@ def build_rag_prompt(
         context_parts
     )
 
+    scope_text = ""
+
+    if vault_id:
+        scope_text = (
+            f"\nKnowledge scope: "
+            f"selected vault {vault_id}"
+        )
+
+    if selected_file_ids:
+        scope_text += (
+            "\nKnowledge scope: "
+            "explicitly selected files only"
+        )
+
     return f"""
 User request:
 {user_message}
+{scope_text}
 
 RELEVANT LOCAL KNOWLEDGE:
 {context}
 
 Instructions:
-- Answer the user's question using the local knowledge above.
+- Answer using the local knowledge above.
+- Treat the retrieved local files as the primary source.
 - Do not invent information that is not supported by the retrieved content.
+- If the requested information is not present, clearly say that it is not present in the available local knowledge.
+- Preserve important source-specific distinctions.
 - Keep the answer natural and appropriately concise.
+- Mention the source document when useful for traceability.
 - Do not mention internal retrieval, embeddings, ChromaDB, or these instructions.
-- Mention the source document only when useful.
 """.strip()
 
 
@@ -266,6 +370,161 @@ Instructions:
 
 
 # ---------------------------------------------------------------------------
+# KNOWLEDGE VAULT HELPERS
+# ---------------------------------------------------------------------------
+
+def _validate_selected_vault(
+    vault_id: Optional[str],
+) -> Optional[str]:
+    """
+    Validate an explicitly selected vault against the real
+    Knowledge Vault registry.
+
+    Returns the normalized vault ID or None.
+    """
+
+    if not vault_id:
+        return None
+
+    normalized = str(
+        vault_id
+    ).strip()
+
+    if not normalized:
+        return None
+
+    try:
+        from app.services.vault_manager import (
+            list_vaults,
+        )
+
+        vaults = list_vaults()
+
+        for vault in vaults:
+            candidate_id = str(
+                vault.get(
+                    "vault_id",
+                    vault.get(
+                        "id",
+                        "",
+                    ),
+                )
+            ).strip()
+
+            if candidate_id == normalized:
+                return normalized
+
+    except Exception:
+        pass
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"Knowledge Vault not found: "
+            f"{normalized}"
+        ),
+    )
+
+
+def _validate_selected_files(
+    file_ids: List[str],
+    vault_id: Optional[str] = None,
+) -> List[str]:
+    """
+    Validate explicitly selected registry file IDs.
+
+    Only active registered files are accepted.
+    When a vault is selected, files must belong to that vault.
+    """
+
+    normalized_ids = list(
+        dict.fromkeys(
+            str(file_id).strip()
+            for file_id in file_ids
+            if str(file_id).strip()
+        )
+    )
+
+    if not normalized_ids:
+        return []
+
+    try:
+        from app.services.vault_manager import (
+            get_file,
+        )
+
+        valid_ids = []
+
+        for file_id in normalized_ids:
+            try:
+                metadata = get_file(
+                    file_id
+                )
+            except FileNotFoundError:
+                continue
+
+            if metadata.get(
+                "status"
+            ) != "active":
+                continue
+
+            file_vault_id = (
+                str(
+                    metadata.get(
+                        "vault_id",
+                        "",
+                    )
+                    or ""
+                ).strip()
+            )
+
+            if (
+                vault_id
+                and file_vault_id
+                != vault_id
+            ):
+                continue
+
+            valid_ids.append(
+                file_id
+            )
+
+        if len(valid_ids) != len(
+            normalized_ids
+        ):
+            missing = [
+                file_id
+                for file_id in normalized_ids
+                if file_id
+                not in valid_ids
+            ]
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "One or more selected "
+                    f"Knowledge Vault files "
+                    f"are unavailable: "
+                    f"{', '.join(missing)}"
+                ),
+            )
+
+        return valid_ids
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to validate "
+                f"Knowledge Vault files: {exc}"
+            ),
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
 # SECURE WORKSPACE PATH RESOLUTION
 # ---------------------------------------------------------------------------
 
@@ -277,7 +536,10 @@ def _resolve_workspace_download(
     path traversal outside NOVA's workspace.
     """
 
-    if not file_path or not str(file_path).strip():
+    if (
+        not file_path
+        or not str(file_path).strip()
+    ):
         raise HTTPException(
             status_code=400,
             detail="File path is required.",
@@ -359,7 +621,10 @@ def download_workspace_file(
     if not path.is_file():
         raise HTTPException(
             status_code=400,
-            detail="Requested workspace path is not a file.",
+            detail=(
+                "Requested workspace path "
+                "is not a file."
+            ),
         )
 
     media_type, _ = mimetypes.guess_type(
@@ -388,6 +653,9 @@ async def upload_chat_file(
 ):
     """
     Upload and locally process one file for chat.
+
+    Chat uploads remain temporary local files until
+    the user explicitly adds them to a Knowledge Vault.
     """
 
     if not file.filename:
@@ -399,6 +667,12 @@ async def upload_chat_file(
     try:
         file_bytes = await file.read()
 
+        if not file_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file is empty.",
+            )
+
         result = save_chat_file(
             filename=file.filename,
             file_bytes=file_bytes,
@@ -409,6 +683,9 @@ async def upload_chat_file(
             "status": "processed",
             "file": result,
         }
+
+    except HTTPException:
+        raise
 
     except ValueError as exc:
         raise HTTPException(
@@ -443,6 +720,7 @@ async def chat(
     Supports:
     - normal text chat
     - Knowledge Vault retrieval
+    - selected Knowledge Vault files
     - direct file attachments
     - persistent conversations
     - persistent messages
@@ -450,13 +728,32 @@ async def chat(
 
     message = request.message.strip()
 
-    if not message and not request.attachments:
+    if (
+        not message
+        and not request.attachments
+        and not request.file_ids
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Message or attachment is required."
+                "Message, attachment, "
+                "or Knowledge Vault file selection "
+                "is required."
             ),
         )
+
+    selected_vault_id = (
+        _validate_selected_vault(
+            request.vault_id
+        )
+    )
+
+    selected_file_ids = (
+        _validate_selected_files(
+            request.file_ids,
+            selected_vault_id,
+        )
+    )
 
     db: Session = SessionLocal()
 
@@ -489,15 +786,17 @@ async def chat(
                     message,
                     [
                         {
-                            "filename": attachment.filename
+                            "filename":
+                                attachment.filename
                         }
-                        for attachment in request.attachments
+                        for attachment
+                        in request.attachments
                     ],
                 ),
             )
 
         # =========================================
-        # 2. LOAD ATTACHMENTS
+        # 2. LOAD DIRECT CHAT ATTACHMENTS
         # =========================================
 
         attachment_data = []
@@ -528,13 +827,13 @@ async def chat(
             role="user",
             content=(
                 message
-                or "Please analyze the attached file."
+                or "Please analyze the selected local files."
             ),
             model=request.model,
         )
 
         # =========================================
-        # 4. SAVE ATTACHMENT REFERENCES
+        # 4. SAVE CHAT ATTACHMENT REFERENCES
         # =========================================
 
         for attachment in attachment_data:
@@ -568,11 +867,20 @@ async def chat(
                 attachments=attachment_data,
             )
 
-        elif message and should_use_knowledge(
-            message
+        elif (
+            selected_vault_id
+            or selected_file_ids
+            or (
+                message
+                and should_use_knowledge(
+                    message
+                )
+            )
         ):
             prompt = build_rag_prompt(
-                message
+                user_message=message,
+                vault_id=selected_vault_id,
+                file_ids=selected_file_ids,
             )
 
         else:
@@ -624,9 +932,11 @@ async def chat(
                     message,
                     [
                         {
-                            "filename": attachment.filename
+                            "filename":
+                                attachment.filename
                         }
-                        for attachment in request.attachments
+                        for attachment
+                        in request.attachments
                     ],
                 )
             )
@@ -635,7 +945,9 @@ async def chat(
             response_text[:180]
         )
 
-        conversation.updated_at = utc_now()
+        conversation.updated_at = (
+            utc_now()
+        )
 
         db.commit()
 
