@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 import mimetypes
+import time
+
+from app.core.database import SessionLocal
 
 from fastapi import (
     APIRouter,
@@ -13,9 +16,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.ai_config import DEFAULT_MODEL
-from app.core.database import SessionLocal
 from app.knowledge.rag import retrieve_context
+from app.services.audit.service import (
+    audit_service,
+    create_request_id,
+)
 from app.services.chat_files import (
     load_chat_file,
     save_chat_file,
@@ -39,7 +44,9 @@ router = APIRouter(
 # NOVA WORKSPACE
 # ---------------------------------------------------------------------------
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = (
+    Path(__file__).resolve().parents[2]
+)
 
 WORKSPACE_ROOT = (
     BACKEND_ROOT
@@ -59,7 +66,9 @@ class AttachmentReference(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = ""
-    model: str = DEFAULT_MODEL
+
+    # None means automatic NOVA model routing.
+    model: Optional[str] = None
 
     conversation_id: Optional[str] = None
 
@@ -69,9 +78,6 @@ class ChatRequest(BaseModel):
         default_factory=list
     )
 
-    # Optional Knowledge Vault context.
-    # Existing requests remain fully compatible because
-    # both fields are optional.
     vault_id: Optional[str] = None
 
     file_ids: List[str] = Field(
@@ -95,14 +101,94 @@ def utc_now():
     )
 
 
+def _safe_audit_success(
+    *,
+    category: str,
+    action: str,
+    service: str,
+    message: str = "",
+    duration_ms: Optional[float] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+):
+    """
+    Best-effort audit recording.
+
+    Audit failures must never break the primary NOVA operation.
+    """
+
+    try:
+        return audit_service.success(
+            category=category,
+            action=action,
+            service=service,
+            message=message,
+            duration_ms=duration_ms,
+            model=model,
+            task_type=task_type,
+            resource=resource,
+            resource_id=resource_id,
+            request_id=request_id,
+            metadata=metadata or {},
+        )
+    except Exception as audit_error:
+        print(
+            "[NOVA AUDIT WARNING] "
+            f"Failed to record success event: {audit_error}"
+        )
+        return None
+
+
+def _safe_audit_failure(
+    *,
+    category: str,
+    action: str,
+    service: str,
+    message: str = "",
+    duration_ms: Optional[float] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+):
+    """
+    Best-effort failure recording.
+
+    Audit failures must never replace the original NOVA error.
+    """
+
+    try:
+        return audit_service.failure(
+            category=category,
+            action=action,
+            service=service,
+            message=message,
+            duration_ms=duration_ms,
+            model=model,
+            task_type=task_type,
+            resource=resource,
+            resource_id=resource_id,
+            request_id=request_id,
+            metadata=metadata or {},
+        )
+    except Exception as audit_error:
+        print(
+            "[NOVA AUDIT WARNING] "
+            f"Failed to record failure event: {audit_error}"
+        )
+        return None
+
+
 def generate_conversation_title(
     message: str,
     attachments: list[dict] | None = None,
 ) -> str:
-    """
-    Generate a deterministic conversation title
-    without calling the LLM.
-    """
 
     clean_message = (
         message.strip()
@@ -111,7 +197,10 @@ def generate_conversation_title(
     )
 
     if clean_message:
-        title = clean_message[:60].strip()
+        title = (
+            clean_message[:60]
+            .strip()
+        )
 
         if len(clean_message) > 60:
             title += "..."
@@ -135,7 +224,10 @@ def generate_conversation_title(
 def should_use_knowledge(
     message: str,
 ) -> bool:
-    text = message.lower().strip()
+
+    text = (
+        message.lower().strip()
+    )
 
     knowledge_indicators = [
         "uploaded document",
@@ -178,18 +270,6 @@ def build_rag_prompt(
     vault_id: Optional[str] = None,
     file_ids: Optional[List[str]] = None,
 ) -> str:
-    """
-    Retrieve local Knowledge Vault context.
-
-    vault_id:
-        Restricts retrieval to one real vault.
-
-    file_ids:
-        Restricts retrieved sources to explicitly selected files.
-
-    The vector layer remains the source for semantic retrieval;
-    this function only prepares grounded context for the LLM.
-    """
 
     try:
         results = retrieve_context(
@@ -230,15 +310,22 @@ def build_rag_prompt(
         results,
         start=1,
     ):
-        source = result.get(
-            "filename"
-        ) or result.get(
-            "source"
-        ) or "Unknown document"
+        source = (
+            result.get(
+                "filename"
+            )
+            or result.get(
+                "source"
+            )
+            or "Unknown document"
+        )
 
-        text = result.get(
-            "text",
-            "",
+        text = str(
+            result.get(
+                "text",
+                "",
+            )
+            or ""
         ).strip()
 
         if not text:
@@ -317,6 +404,7 @@ def build_attachment_prompt(
     user_message: str,
     attachments: list[dict],
 ) -> str:
+
     context_parts = []
 
     for attachment in attachments:
@@ -325,9 +413,12 @@ def build_attachment_prompt(
             "Unknown file",
         )
 
-        text = attachment.get(
-            "text",
-            "",
+        text = str(
+            attachment.get(
+                "text",
+                "",
+            )
+            or ""
         ).strip()
 
         if not text:
@@ -370,18 +461,12 @@ Instructions:
 
 
 # ---------------------------------------------------------------------------
-# KNOWLEDGE VAULT HELPERS
+# KNOWLEDGE VAULT VALIDATION
 # ---------------------------------------------------------------------------
 
 def _validate_selected_vault(
     vault_id: Optional[str],
 ) -> Optional[str]:
-    """
-    Validate an explicitly selected vault against the real
-    Knowledge Vault registry.
-
-    Returns the normalized vault ID or None.
-    """
 
     if not vault_id:
         return None
@@ -430,12 +515,6 @@ def _validate_selected_files(
     file_ids: List[str],
     vault_id: Optional[str] = None,
 ) -> List[str]:
-    """
-    Validate explicitly selected registry file IDs.
-
-    Only active registered files are accepted.
-    When a vault is selected, files must belong to that vault.
-    """
 
     normalized_ids = list(
         dict.fromkeys(
@@ -468,15 +547,13 @@ def _validate_selected_files(
             ) != "active":
                 continue
 
-            file_vault_id = (
-                str(
-                    metadata.get(
-                        "vault_id",
-                        "",
-                    )
-                    or ""
-                ).strip()
-            )
+            file_vault_id = str(
+                metadata.get(
+                    "vault_id",
+                    "",
+                )
+                or ""
+            ).strip()
 
             if (
                 vault_id
@@ -494,7 +571,8 @@ def _validate_selected_files(
         ):
             missing = [
                 file_id
-                for file_id in normalized_ids
+                for file_id
+                in normalized_ids
                 if file_id
                 not in valid_ids
             ]
@@ -503,8 +581,8 @@ def _validate_selected_files(
                 status_code=404,
                 detail=(
                     "One or more selected "
-                    f"Knowledge Vault files "
-                    f"are unavailable: "
+                    "Knowledge Vault files "
+                    "are unavailable: "
                     f"{', '.join(missing)}"
                 ),
             )
@@ -525,20 +603,18 @@ def _validate_selected_files(
 
 
 # ---------------------------------------------------------------------------
-# SECURE WORKSPACE PATH RESOLUTION
+# SECURE WORKSPACE
 # ---------------------------------------------------------------------------
 
 def _resolve_workspace_download(
     file_path: str,
 ) -> Path:
-    """
-    Resolve a requested workspace file while preventing
-    path traversal outside NOVA's workspace.
-    """
 
     if (
         not file_path
-        or not str(file_path).strip()
+        or not str(
+            file_path
+        ).strip()
     ):
         raise HTTPException(
             status_code=400,
@@ -553,13 +629,15 @@ def _resolve_workspace_download(
         resolved = raw_path.resolve()
     else:
         resolved = (
-            WORKSPACE_ROOT / raw_path
+            WORKSPACE_ROOT
+            / raw_path
         ).resolve()
 
     try:
         resolved.relative_to(
             WORKSPACE_ROOT
         )
+
     except ValueError as exc:
         raise HTTPException(
             status_code=403,
@@ -585,7 +663,7 @@ def chat_health():
 
 
 # ---------------------------------------------------------------------------
-# FILE DOWNLOAD
+# WORKSPACE DOWNLOAD
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -594,22 +672,37 @@ def chat_health():
 def download_workspace_file(
     file_path: str,
 ):
-    """
-    Download a generated or existing file from
-    NOVA's controlled workspace.
 
-    Example:
-
-    /api/chat/download/output/agent_test_report.docx
-
-    Only files inside app/workspace are accessible.
-    """
+    started = time.perf_counter()
+    request_id = create_request_id()
 
     path = _resolve_workspace_download(
         file_path
     )
 
     if not path.exists():
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="workspace_download",
+            service="chat_files",
+            message=(
+                f"Workspace file not found: "
+                f"{file_path}"
+            ),
+            duration_ms=elapsed_ms,
+            resource="workspace_file",
+            resource_id=file_path,
+            request_id=request_id,
+            metadata={
+                "file_path": file_path,
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=(
@@ -619,6 +712,28 @@ def download_workspace_file(
         )
 
     if not path.is_file():
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="workspace_download",
+            service="chat_files",
+            message=(
+                "Requested workspace path "
+                "is not a file."
+            ),
+            duration_ms=elapsed_ms,
+            resource="workspace_file",
+            resource_id=file_path,
+            request_id=request_id,
+            metadata={
+                "file_path": file_path,
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=(
@@ -627,14 +742,49 @@ def download_workspace_file(
             ),
         )
 
-    media_type, _ = mimetypes.guess_type(
-        path.name
+    media_type, _ = (
+        mimetypes.guess_type(
+            path.name
+        )
     )
 
     if not media_type:
         media_type = (
             "application/octet-stream"
         )
+
+    elapsed_ms = (
+        time.perf_counter()
+        - started
+    ) * 1000.0
+
+    _safe_audit_success(
+        category="chat",
+        action="workspace_download",
+        service="chat_files",
+        message=(
+            f"Downloaded workspace file "
+            f"{path.name}."
+        ),
+        duration_ms=elapsed_ms,
+        resource="workspace_file",
+        resource_id=str(
+            path.relative_to(
+                WORKSPACE_ROOT
+            )
+        ),
+        request_id=request_id,
+        metadata={
+            "file_path": str(
+                path.relative_to(
+                    WORKSPACE_ROOT
+                )
+            ),
+            "filename": path.name,
+            "media_type": media_type,
+            "size_bytes": path.stat().st_size,
+        },
+    )
 
     return FileResponse(
         path=str(path),
@@ -651,14 +801,26 @@ def download_workspace_file(
 async def upload_chat_file(
     file: UploadFile = File(...),
 ):
-    """
-    Upload and locally process one file for chat.
 
-    Chat uploads remain temporary local files until
-    the user explicitly adds them to a Knowledge Vault.
-    """
+    started = time.perf_counter()
+    request_id = create_request_id()
 
     if not file.filename:
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="file_upload",
+            service="chat_files",
+            message="No filename provided.",
+            duration_ms=elapsed_ms,
+            request_id=request_id,
+            metadata={},
+        )
+
         raise HTTPException(
             status_code=400,
             detail="No filename provided.",
@@ -668,6 +830,29 @@ async def upload_chat_file(
         file_bytes = await file.read()
 
         if not file_bytes:
+            elapsed_ms = (
+                time.perf_counter()
+                - started
+            ) * 1000.0
+
+            _safe_audit_failure(
+                category="chat",
+                action="file_upload",
+                service="chat_files",
+                message="Uploaded file is empty.",
+                duration_ms=elapsed_ms,
+                resource="chat_upload",
+                resource_id=file.filename,
+                request_id=request_id,
+                metadata={
+                    "filename": file.filename,
+                    "content_type": (
+                        file.content_type or ""
+                    ),
+                    "size_bytes": 0,
+                },
+            )
+
             raise HTTPException(
                 status_code=400,
                 detail="Uploaded file is empty.",
@@ -679,6 +864,42 @@ async def upload_chat_file(
             content_type=file.content_type or "",
         )
 
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_success(
+            category="chat",
+            action="file_upload",
+            service="chat_files",
+            message=(
+                f"Uploaded and processed "
+                f"{file.filename}."
+            ),
+            duration_ms=elapsed_ms,
+            resource="chat_upload",
+            resource_id=str(
+                result.get(
+                    "file_id",
+                    file.filename,
+                )
+            ),
+            request_id=request_id,
+            metadata={
+                "filename": file.filename,
+                "content_type": (
+                    file.content_type or ""
+                ),
+                "size_bytes": len(
+                    file_bytes
+                ),
+                "result_keys": list(
+                    result.keys()
+                ),
+            },
+        )
+
         return {
             "status": "processed",
             "file": result,
@@ -688,12 +909,62 @@ async def upload_chat_file(
         raise
 
     except ValueError as exc:
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="file_upload",
+            service="chat_files",
+            message=str(exc),
+            duration_ms=elapsed_ms,
+            resource="chat_upload",
+            resource_id=file.filename,
+            request_id=request_id,
+            metadata={
+                "filename": file.filename,
+                "content_type": (
+                    file.content_type or ""
+                ),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="file_upload",
+            service="chat_files",
+            message=(
+                f"File processing failed: "
+                f"{exc}"
+            ),
+            duration_ms=elapsed_ms,
+            resource="chat_upload",
+            resource_id=file.filename,
+            request_id=request_id,
+            metadata={
+                "filename": file.filename,
+                "content_type": (
+                    file.content_type or ""
+                ),
+                "exception_type": (
+                    type(exc).__name__
+                ),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -714,25 +985,45 @@ async def upload_chat_file(
 async def chat(
     request: ChatRequest,
 ):
-    """
-    Main NOVA chat endpoint.
 
-    Supports:
-    - normal text chat
-    - Knowledge Vault retrieval
-    - selected Knowledge Vault files
-    - direct file attachments
-    - persistent conversations
-    - persistent messages
-    """
+    started = time.perf_counter()
+    request_id = create_request_id()
 
-    message = request.message.strip()
+    message = (
+        request.message.strip()
+    )
 
     if (
         not message
         and not request.attachments
         and not request.file_ids
     ):
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="request",
+            service="chat",
+            message=(
+                "Message, attachment, or "
+                "Knowledge Vault file selection "
+                "is required."
+            ),
+            duration_ms=elapsed_ms,
+            request_id=request_id,
+            metadata={
+                "conversation_id": (
+                    request.conversation_id
+                ),
+                "requested_model": (
+                    request.model
+                ),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=(
@@ -757,12 +1048,16 @@ async def chat(
 
     db: Session = SessionLocal()
 
-    try:
-        # =========================================
-        # 1. GET OR CREATE CONVERSATION
-        # =========================================
+    conversation = None
+    actual_model = None
+    task_type = None
+    attachment_data = []
 
-        conversation = None
+    try:
+
+        # ================================================================
+        # 1. CONVERSATION
+        # ================================================================
 
         if request.conversation_id:
             conversation = get_conversation(
@@ -780,26 +1075,26 @@ async def chat(
                 )
 
         else:
-            conversation = create_conversation(
-                db,
-                title=generate_conversation_title(
-                    message,
-                    [
-                        {
-                            "filename":
-                                attachment.filename
-                        }
-                        for attachment
-                        in request.attachments
-                    ],
-                ),
+            conversation = (
+                create_conversation(
+                    db,
+                    title=generate_conversation_title(
+                        message,
+                        [
+                            {
+                                "filename":
+                                    attachment.filename
+                            }
+                            for attachment
+                            in request.attachments
+                        ],
+                    ),
+                )
             )
 
-        # =========================================
-        # 2. LOAD DIRECT CHAT ATTACHMENTS
-        # =========================================
-
-        attachment_data = []
+        # ================================================================
+        # 2. DIRECT ATTACHMENTS
+        # ================================================================
 
         for attachment in request.attachments:
             try:
@@ -817,24 +1112,33 @@ async def chat(
                     detail=str(exc),
                 ) from exc
 
-        # =========================================
-        # 3. SAVE USER MESSAGE
-        # =========================================
+        # ================================================================
+        # 3. USER MESSAGE
+        # ================================================================
 
-        saved_user_message = add_message(
-            db=db,
-            conversation=conversation,
-            role="user",
-            content=(
-                message
-                or "Please analyze the selected local files."
-            ),
-            model=request.model,
+        requested_model_label = (
+            request.model.strip()
+            if request.model
+            and request.model.strip()
+            else "AUTO"
         )
 
-        # =========================================
-        # 4. SAVE CHAT ATTACHMENT REFERENCES
-        # =========================================
+        saved_user_message = (
+            add_message(
+                db=db,
+                conversation=conversation,
+                role="user",
+                content=(
+                    message
+                    or "Please analyze the selected local files."
+                ),
+                model=requested_model_label,
+            )
+        )
+
+        # ================================================================
+        # 4. ATTACHMENT REFERENCES
+        # ================================================================
 
         for attachment in attachment_data:
             add_attachment(
@@ -854,11 +1158,12 @@ async def chat(
                 ),
             )
 
-        # =========================================
-        # 5. BUILD AI PROMPT
-        # =========================================
+        # ================================================================
+        # 5. BUILD PROMPT + ROUTING CONTEXT
+        # ================================================================
 
         if attachment_data:
+
             prompt = build_attachment_prompt(
                 user_message=(
                     message
@@ -866,6 +1171,8 @@ async def chat(
                 ),
                 attachments=attachment_data,
             )
+
+            task_type = "document"
 
         elif (
             selected_vault_id
@@ -877,27 +1184,71 @@ async def chat(
                 )
             )
         ):
+
             prompt = build_rag_prompt(
                 user_message=message,
                 vault_id=selected_vault_id,
                 file_ids=selected_file_ids,
             )
 
+            task_type = "knowledge"
+
         else:
+
+            # None means automatic NOVA routing.
             prompt = message
+            task_type = None
 
-        # =========================================
-        # 6. GENERATE NOVA RESPONSE
-        # =========================================
+        # ================================================================
+        # 6. CENTRAL NOVA MODEL ENGINE
+        # ================================================================
 
-        response = await generate_response(
-            prompt=prompt,
-            model=request.model,
-        )
+        try:
+            generation = (
+                await generate_response(
+                    prompt=prompt,
+                    model=request.model,
+                    task_type=task_type,
+                    return_metadata=True,
+                )
+            )
+
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+
+        actual_model = str(
+            generation.get(
+                "model_used",
+                "",
+            )
+            or ""
+        ).strip()
 
         response_text = str(
-            response
+            generation.get(
+                "response",
+                "",
+            )
+            or ""
         ).strip()
+
+        if not actual_model:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "NOVA did not return a verified "
+                    "model identifier."
+                ),
+            )
 
         if not response_text:
             raise HTTPException(
@@ -907,21 +1258,29 @@ async def chat(
                 ),
             )
 
-        # =========================================
-        # 7. SAVE NOVA RESPONSE
-        # =========================================
+        # ================================================================
+        # 7. TRUTHFUL MODEL METADATA
+        # ================================================================
+
+        saved_user_message.model = (
+            actual_model
+        )
+
+        # ================================================================
+        # 8. ASSISTANT MESSAGE
+        # ================================================================
 
         add_message(
             db=db,
             conversation=conversation,
             role="assistant",
             content=response_text,
-            model=request.model,
+            model=actual_model,
         )
 
-        # =========================================
-        # 8. UPDATE CONVERSATION METADATA
-        # =========================================
+        # ================================================================
+        # 9. CONVERSATION METADATA
+        # ================================================================
 
         if (
             conversation.title
@@ -951,22 +1310,171 @@ async def chat(
 
         db.commit()
 
-        # =========================================
-        # 9. RETURN RESPONSE
-        # =========================================
+        # ================================================================
+        # 10. AUDIT SUCCESS
+        # ================================================================
+
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_success(
+            category="chat",
+            action="request",
+            service="chat",
+            message=(
+                "Local chat request completed successfully."
+            ),
+            duration_ms=elapsed_ms,
+            model=actual_model,
+            task_type=(
+                task_type
+                or "auto"
+            ),
+            resource="conversation",
+            resource_id=conversation.id,
+            request_id=request_id,
+            metadata={
+                "conversation_id": conversation.id,
+                "requested_model": (
+                    request.model
+                ),
+                "resolved_model": actual_model,
+                "attachment_count": len(
+                    attachment_data
+                ),
+                "attachment_file_ids": [
+                    item.get(
+                        "file_id"
+                    )
+                    for item
+                    in attachment_data
+                    if item.get(
+                        "file_id"
+                    )
+                ],
+                "vault_id": selected_vault_id,
+                "selected_file_ids": (
+                    selected_file_ids
+                ),
+                "message_length": len(
+                    message
+                ),
+            },
+        )
+
+        # ================================================================
+        # 11. RESPONSE
+        # ================================================================
 
         return ChatResponse(
             response=response_text,
-            model=request.model,
+            model=actual_model,
             conversation_id=conversation.id,
         )
 
-    except HTTPException:
+    except HTTPException as exc:
         db.rollback()
+
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="request",
+            service="chat",
+            message=(
+                f"Chat request failed: "
+                f"{exc.detail}"
+            ),
+            duration_ms=elapsed_ms,
+            model=actual_model,
+            task_type=(
+                task_type
+                or "auto"
+            ),
+            resource="conversation",
+            resource_id=(
+                conversation.id
+                if conversation
+                else request.conversation_id
+            ),
+            request_id=request_id,
+            metadata={
+                "status_code": exc.status_code,
+                "conversation_id": (
+                    conversation.id
+                    if conversation
+                    else request.conversation_id
+                ),
+                "requested_model": (
+                    request.model
+                ),
+                "attachment_count": len(
+                    attachment_data
+                ),
+                "vault_id": selected_vault_id,
+                "selected_file_ids": (
+                    selected_file_ids
+                ),
+            },
+        )
+
         raise
 
     except Exception as exc:
         db.rollback()
+
+        elapsed_ms = (
+            time.perf_counter()
+            - started
+        ) * 1000.0
+
+        _safe_audit_failure(
+            category="chat",
+            action="request",
+            service="chat",
+            message=(
+                "NOVA could not process the request: "
+                f"{exc}"
+            ),
+            duration_ms=elapsed_ms,
+            model=actual_model,
+            task_type=(
+                task_type
+                or "auto"
+            ),
+            resource="conversation",
+            resource_id=(
+                conversation.id
+                if conversation
+                else request.conversation_id
+            ),
+            request_id=request_id,
+            metadata={
+                "exception_type": (
+                    type(exc).__name__
+                ),
+                "conversation_id": (
+                    conversation.id
+                    if conversation
+                    else request.conversation_id
+                ),
+                "requested_model": (
+                    request.model
+                ),
+                "attachment_count": len(
+                    attachment_data
+                ),
+                "vault_id": selected_vault_id,
+                "selected_file_ids": (
+                    selected_file_ids
+                ),
+            },
+        )
 
         raise HTTPException(
             status_code=500,

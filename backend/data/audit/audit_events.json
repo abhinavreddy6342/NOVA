@@ -1,0 +1,143 @@
+[
+  {
+    "event_id": "fffbd8f7b55e448599e439d7f646af2d",
+    "timestamp": "2026-09-17T17:19:30.207563Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "Local chat request completed successfully.",
+    "metadata": {
+      "conversation_id": "c72ebad0-a48e-4ac3-88c9-b2cf7a00bfe0",
+      "requested_model": null,
+      "resolved_model": "llama3.2:latest",
+      "attachment_count": 0,
+      "attachment_file_ids": [],
+      "vault_id": null,
+      "selected_file_ids": [],
+      "message_length": 29
+    },
+    "duration_ms": 14472.75,
+    "model": "llama3.2:latest",
+    "task_type": "auto",
+    "resource": "conversation",
+    "resource_id": "c72ebad0-a48e-4ac3-88c9-b2cf7a00bfe0",
+    "request_id": "fd086840174c476bab1a3a8257571d58"
+  },
+  {
+    "event_id": "04230b61a0e9464cafd0953a16a235e0",
+    "timestamp": "2026-09-17T19:07:52.119459Z",
+    "category": "chat",
+    "action": "workspace_download",
+    "service": "chat_files",
+    "status": "failed",
+    "message": "Workspace file not found: nonexistent-or-user-a-file",
+    "metadata": {
+      "file_path": "nonexistent-or-user-a-file",
+      "user_id": "30372a04-2146-41a4-814e-090d3b57c267"
+    },
+    "duration_ms": 0.94,
+    "resource": "workspace_file",
+    "resource_id": "nonexistent-or-user-a-file",
+    "request_id": "ea4b717175ff4717953103bb0a97899f"
+  },
+  {
+    "event_id": "02455b0a7e9042b8a6d4440eede4ff4a",
+    "timestamp": "2026-09-17T19:09:12.568827Z",
+    "category": "history",
+    "action": "conversation_delete",
+    "service": "chat_history",
+    "status": "failed",
+    "message": "Conversation deletion failed: conversation not found",
+    "metadata": {
+      "reason": "not_found"
+    },
+    "duration_ms": 0.87,
+    "resource": "conversation",
+    "resource_id": "conv-user-a-123",
+    "request_id": "9d6698a467b84520ab4822a2128ef4ba"
+  },
+  {
+    "event_id": "084f9dcb51504c8d848faca9c1a73860",
+    "timestamp": "2026-09-17T19:09:13.284578Z",
+    "category": "chat",
+    "action": "workspace_download",
+    "service": "chat_files",
+    "status": "failed",
+    "message": "Workspace file not found: nonexistent-or-user-a-file",
+    "metadata": {
+      "file_path": "nonexistent-or-user-a-file",
+      "user_id": "d064ebde-278c-448c-bc3e-87c7b56c0c7a"
+    },
+    "duration_ms": 0.96,
+    "resource": "workspace_file",
+    "resource_id": "nonexistent-or-user-a-file",
+    "request_id": "27295af4edaf4f8a95eb9226efe59849"
+  },
+  {
+    "event_id": "5c532bfe2cbe4f35b278376a0ac95b3a",
+    "timestamp": "2026-09-17T19:10:29.342435Z",
+    "category": "history",
+    "action": "conversation_delete",
+    "service": "chat_history",
+    "status": "failed",
+    "message": "Conversation deletion failed: conversation not found",
+    "metadata": {
+      "reason": "not_found"
+    },
+    "duration_ms": 1.35,
+    "resource": "conversation",
+    "resource_id": "conv-user-a-123",
+    "request_id": "e3b46731c7b641c8bae0fc0c31dd41fe"
+  },
+  {
+    "event_id": "d7d0f6277a9e4bf4a2a4874e4bb918aa",
+    "timestamp": "2026-09-17T19:10:29.998031Z",
+    "category": "chat",
+    "action": "workspace_download",
+    "service": "chat_files",
+    "status": "failed",
+    "message": "Workspace file not found: nonexistent-or-user-a-file",
+    "metadata": {
+      "file_path": "nonexistent-or-user-a-file",
+      "user_id": "cc429a18-c7ad-43ce-9dfd-c2385edfd05f"
+    },
+    "duration_ms": 3.58,
+    "resource": "workspace_file",
+    "resource_id": "nonexistent-or-user-a-file",
+    "request_id": "f13579dffa814726a4f7acf808f72a04"
+  },
+  {
+    "event_id": "6b3486b360814ecfac51d4d3cd1d5028",
+    "timestamp": "2026-09-17T19:16:51.521924Z",
+    "category": "history",
+    "action": "conversation_delete",
+    "service": "chat_history",
+    "status": "failed",
+    "message": "Conversation deletion failed: conversation not found",
+    "metadata": {
+      "reason": "not_found"
+    },
+    "duration_ms": 2.49,
+    "resource": "conversation",
+    "resource_id": "conv-user-a-123",
+    "request_id": "26486655f9954377973fbd49cb5ed499"
+  },
+  {
+    "event_id": "364b7cfb13234242acffd225a971cb67",
+    "timestamp": "2026-09-17T19:16:52.064806Z",
+    "category": "chat",
+    "action": "workspace_download",
+    "service": "chat_files",
+    "status": "failed",
+    "message": "Workspace file not found: nonexistent-or-user-a-file",
+    "metadata": {
+      "file_path": "nonexistent-or-user-a-file",
+      "user_id": "31ff94eb-8fbf-4995-91e2-ac03cf68bedd"
+    },
+    "duration_ms": 0.77,
+    "resource": "workspace_file",
+    "resource_id": "nonexistent-or-user-a-file",
+    "request_id": "f7a0cf1f0a824883ac5a6f58d24ad335"
+  }
+]

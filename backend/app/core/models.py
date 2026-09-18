@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -17,12 +18,81 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+# ============================================================
+# USER
+# ============================================================
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    email = Column(
+        String(320),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    password_hash = Column(
+        String(255),
+        nullable=False,
+    )
+
+    name = Column(
+        String(200),
+        nullable=False,
+    )
+
+    role = Column(
+        String(50),
+        nullable=False,
+        default="user",
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    conversations = relationship(
+        "Conversation",
+        back_populates="user",
+        passive_deletes=True,
+    )
+
+
+# ============================================================
+# CONVERSATION
+# ============================================================
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(
         String(36),
         primary_key=True,
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
     )
 
     title = Column(
@@ -50,6 +120,11 @@ class Conversation(Base):
         onupdate=utc_now,
     )
 
+    user = relationship(
+        "User",
+        back_populates="conversations",
+    )
+
     messages = relationship(
         "ChatMessage",
         back_populates="conversation",
@@ -57,6 +132,10 @@ class Conversation(Base):
         order_by="ChatMessage.created_at",
     )
 
+
+# ============================================================
+# CHAT MESSAGE
+# ============================================================
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -107,6 +186,10 @@ class ChatMessage(Base):
         back_populates="messages",
     )
 
+
+# ============================================================
+# CHAT ATTACHMENT
+# ============================================================
 
 class ChatAttachment(Base):
     __tablename__ = "chat_attachments"

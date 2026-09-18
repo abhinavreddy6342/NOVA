@@ -3,6 +3,7 @@ import json
 import shutil
 import re
 import uuid
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,12 +26,137 @@ from app.services.chat_history import (
     create_conversation,
     get_conversation,
 )
+from app.services.audit.service import (
+    audit_service,
+    create_request_id,
+)
 
 
 router = APIRouter(
     prefix="/api/agents",
     tags=["Agents"],
 )
+
+
+# ---------------------------------------------------------------------------
+# AUDIT ADAPTER
+# ---------------------------------------------------------------------------
+
+def _safe_audit(
+    *,
+    category: str,
+    action: str,
+    service: str,
+    status: str,
+    message: str,
+    request_id: Optional[str] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Best-effort audit adapter.
+
+    Audit persistence must never break the actual NOVA
+    agent / mission execution path.
+    """
+
+    try:
+        audit_service.record_event(
+            category=category,
+            action=action,
+            service=service,
+            status=status,
+            message=message,
+            request_id=request_id,
+            model=model,
+            task_type=task_type,
+            resource=resource,
+            resource_id=resource_id,
+            duration_ms=duration_ms,
+            metadata=metadata or {},
+        )
+    except Exception as exc:
+        print(
+            "[NOVA AUDIT] "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+def _audit_success(
+    *,
+    category: str,
+    action: str,
+    service: str,
+    message: str,
+    request_id: Optional[str] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    _safe_audit(
+        category=category,
+        action=action,
+        service=service,
+        status="success",
+        message=message,
+        request_id=request_id,
+        model=model,
+        task_type=task_type,
+        resource=resource,
+        resource_id=resource_id,
+        duration_ms=duration_ms,
+        metadata=metadata,
+    )
+
+
+def _audit_failure(
+    *,
+    category: str,
+    action: str,
+    service: str,
+    message: str,
+    request_id: Optional[str] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    _safe_audit(
+        category=category,
+        action=action,
+        service=service,
+        status="failed",
+        message=message,
+        request_id=request_id,
+        model=model,
+        task_type=task_type,
+        resource=resource,
+        resource_id=resource_id,
+        duration_ms=duration_ms,
+        metadata=metadata,
+    )
+
+
+def _duration_ms(
+    started_at: float,
+) -> float:
+    return round(
+        (
+            time.perf_counter()
+            - started_at
+        )
+        * 1000,
+        2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1113,6 +1239,105 @@ def _prepare_agent_context(
 
             staged_attachments.append(
                 staged
+            )
+
+            request_id = str(
+                prepared_context.get(
+                    "audit_request_id",
+                    "",
+                )
+            ).strip() or None
+
+            mission_context = prepared_context.get(
+                "mission",
+                {},
+            )
+
+            mission_id = None
+
+            if isinstance(
+                mission_context,
+                dict,
+            ):
+                mission_id = str(
+                    mission_context.get(
+                        "mission_id",
+                        "",
+                    )
+                ).strip() or None
+
+            category = (
+                "mission"
+                if prepared_context.get(
+                    "mission_control",
+                    False,
+                )
+                else "agent"
+            )
+
+            action = (
+                "mission_evidence_staged"
+                if category == "mission"
+                else "agent_evidence_staged"
+            )
+
+            filename = str(
+                staged.get(
+                    "original_filename",
+                    attachment.get(
+                        "filename",
+                        "source file",
+                    ),
+                )
+            ).strip()
+
+            _audit_success(
+                category=category,
+                action=action,
+                service="agents",
+                message=(
+                    f"Staged source evidence: {filename}"
+                ),
+                request_id=request_id,
+                task_type=(
+                    "mission"
+                    if category == "mission"
+                    else "agent"
+                ),
+                resource="file",
+                resource_id=str(
+                    attachment.get(
+                        "file_id",
+                        "",
+                    )
+                ).strip() or None,
+                metadata={
+                    "mission_id": mission_id,
+                    "file_id": str(
+                        attachment.get(
+                            "file_id",
+                            "",
+                        )
+                    ).strip(),
+                    "filename": filename,
+                    "source_type": str(
+                        attachment.get(
+                            "source_type",
+                            "chat",
+                        )
+                    ).strip(),
+                    "vault_id": staged.get(
+                        "vault_id"
+                    ),
+                    "vault_name": staged.get(
+                        "vault_name",
+                        "",
+                    ),
+                    "workspace_file_path": staged.get(
+                        "workspace_file_path",
+                        "",
+                    ),
+                },
             )
 
     except Exception:
@@ -3105,6 +3330,83 @@ def extract_artifacts(
     return artifacts
 
 
+def _audit_generated_artifacts(
+    *,
+    artifacts: List[Dict[str, Any]],
+    request_id: Optional[str],
+    category: str,
+    task_type: str,
+    mission_id: Optional[str] = None,
+) -> None:
+    """
+    Persist one real audit event per physically verified artifact.
+    """
+
+    if not artifacts:
+        return
+
+    for artifact in artifacts:
+        file_name = str(
+            artifact.get(
+                "file_name",
+                "Generated artifact",
+            )
+        ).strip()
+
+        file_path = str(
+            artifact.get(
+                "file_path",
+                "",
+            )
+        ).strip()
+
+        _audit_success(
+            category="artifact",
+            action="artifact_generated",
+            service="agents",
+            message=(
+                f"Generated artifact: {file_name}"
+            ),
+            request_id=request_id,
+            task_type=task_type,
+            resource="artifact",
+            resource_id=file_path or file_name,
+            metadata={
+                "source_category": category,
+                "mission_id": mission_id,
+                "step_id": str(
+                    artifact.get(
+                        "step_id",
+                        "",
+                    )
+                ),
+                "file_name": file_name,
+                "file_path": file_path,
+                "extension": artifact.get(
+                    "extension",
+                    "",
+                ),
+                "artifact_type": artifact.get(
+                    "artifact_type",
+                    "",
+                ),
+                "size_bytes": artifact.get(
+                    "size_bytes"
+                ),
+                "verification_status": artifact.get(
+                    "verification_status",
+                    "",
+                ),
+                "available": bool(
+                    artifact.get(
+                        "available",
+                        False,
+                    )
+                ),
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # ARTIFACT RESPONSE
 # ---------------------------------------------------------------------------
@@ -3314,6 +3616,8 @@ def _execute_agent_workflow(
     Shared sovereign Planner -> Executor -> Response pipeline.
     """
 
+    workflow_started_at = time.perf_counter()
+
     (
         prepared_context,
         staged_attachments,
@@ -3326,6 +3630,50 @@ def _execute_agent_workflow(
         "original_objective"
     ] = objective
 
+    request_id = str(
+        prepared_context.get(
+            "audit_request_id",
+            "",
+        )
+    ).strip() or None
+
+    mission_control = bool(
+        prepared_context.get(
+            "mission_control",
+            False,
+        )
+    )
+
+    task_type = (
+        "mission"
+        if mission_control
+        else "agent"
+    )
+
+    mission_id = None
+
+    mission_context_for_audit = prepared_context.get(
+        "mission",
+        {},
+    )
+
+    if isinstance(
+        mission_context_for_audit,
+        dict,
+    ):
+        mission_id = str(
+            mission_context_for_audit.get(
+                "mission_id",
+                "",
+            )
+        ).strip() or None
+
+    category = (
+        "mission"
+        if mission_control
+        else "agent"
+    )
+
     try:
         planner_objective = str(
             prepared_context.get(
@@ -3333,13 +3681,6 @@ def _execute_agent_workflow(
                 objective,
             )
         ).strip()
-
-        mission_control = bool(
-            prepared_context.get(
-                "mission_control",
-                False,
-            )
-        )
 
         evidence_review = bool(
             prepared_context.get(
@@ -3373,10 +3714,59 @@ def _execute_agent_workflow(
                 + "Return the generated DOCX as a real workspace artifact."
             )
 
+        plan_started_at = time.perf_counter()
+
         plan = (
             agent_planner.create_plan(
                 objective=planner_objective,
             )
+        )
+
+        _audit_success(
+            category=category,
+            action=(
+                "mission_plan_created"
+                if mission_control
+                else "agent_plan_created"
+            ),
+            service="agents.planner",
+            message=(
+                "Mission plan created."
+                if mission_control
+                else "Agent plan created."
+            ),
+            request_id=request_id,
+            task_type=task_type,
+            resource=(
+                "mission"
+                if mission_control
+                else "agent"
+            ),
+            resource_id=mission_id,
+            duration_ms=_duration_ms(
+                plan_started_at
+            ),
+            metadata={
+                "mission_id": mission_id,
+                "objective_length": len(
+                    objective
+                ),
+                "evidence_review": evidence_review,
+                "evidence_count": len(
+                    prepared_context.get(
+                        "source_references",
+                        [],
+                    )
+                    if isinstance(
+                        prepared_context.get(
+                            "source_references",
+                            [],
+                        ),
+                        list,
+                    )
+                    else []
+                ),
+            },
         )
 
         effective_auto_confirm = (
@@ -3394,7 +3784,7 @@ def _execute_agent_workflow(
             auto_confirm=effective_auto_confirm,
         )
 
-        mission_id = None
+        execution_mission_id = None
 
         if mission_control:
             mission_context = prepared_context.get(
@@ -3406,39 +3796,150 @@ def _execute_agent_workflow(
                 mission_context,
                 dict,
             ):
-                mission_id = str(
+                execution_mission_id = str(
                     mission_context.get(
                         "mission_id",
                         "",
                     )
                 ).strip()
 
-            if not mission_id:
-                mission_id = str(
+            if not execution_mission_id:
+                execution_mission_id = str(
                     prepared_context.get(
                         "mission_id",
                         "",
                     )
                 ).strip()
 
+        execution_started_at = time.perf_counter()
+
         execution = executor.execute(
             plan=plan,
             context=prepared_context,
             mission_id=(
-                mission_id
-                if mission_id
+                execution_mission_id
+                if execution_mission_id
                 else None
             ),
-        )
-
-        plan_dump = plan.model_dump(
-            mode="json"
         )
 
         execution_dump = (
             serialize_execution(
                 execution
             )
+        )
+
+        execution_status = str(
+            execution_dump.get(
+                "status",
+                "",
+            )
+        ).strip().lower()
+
+        failed_steps_for_audit = (
+            execution_dump.get(
+                "failed_steps"
+            ) or []
+        )
+
+        blocked_steps_for_audit = (
+            execution_dump.get(
+                "blocked_steps"
+            ) or []
+        )
+
+        execution_audit_status = (
+            "failed"
+            if (
+                execution_status
+                in {
+                    "failed",
+                    "failure",
+                    "error",
+                }
+                or failed_steps_for_audit
+            )
+            else "success"
+        )
+
+        execution_message = (
+            "Mission execution completed."
+            if mission_control
+            else "Agent execution completed."
+        )
+
+        if execution_status in {
+            "cancelled",
+            "canceled",
+        }:
+            execution_message = (
+                "Mission execution stopped cooperatively."
+            )
+
+        elif failed_steps_for_audit:
+            execution_message = (
+                "Agent execution completed with failed steps."
+            )
+
+        elif blocked_steps_for_audit:
+            execution_message = (
+                "Agent execution completed with blocked steps."
+            )
+
+        _safe_audit(
+            category=category,
+            action=(
+                "mission_execution"
+                if mission_control
+                else "agent_execution"
+            ),
+            service="agents.executor",
+            status=execution_audit_status,
+            message=execution_message,
+            request_id=request_id,
+            task_type=task_type,
+            resource=(
+                "mission"
+                if mission_control
+                else "agent"
+            ),
+            resource_id=(
+                execution_mission_id
+                or mission_id
+            ),
+            duration_ms=_duration_ms(
+                execution_started_at
+            ),
+            metadata={
+                "mission_id": (
+                    execution_mission_id
+                    or mission_id
+                ),
+                "execution_status": execution_status,
+                "completed_steps": len(
+                    execution_dump.get(
+                        "completed_steps",
+                        [],
+                    )
+                    or []
+                ),
+                "failed_steps": len(
+                    failed_steps_for_audit
+                ),
+                "blocked_steps": len(
+                    blocked_steps_for_audit
+                ),
+                "mission_cancelled": bool(
+                    execution_dump.get(
+                        "mission_cancelled",
+                        False,
+                    )
+                ),
+            },
+        )
+
+        plan_dump = plan.model_dump(
+            mode="json"
         )
 
         if evidence_review:
@@ -3496,6 +3997,14 @@ def _execute_agent_workflow(
                     "or could not be verified in the NOVA workspace output directory."
                 )
 
+            _audit_generated_artifacts(
+                artifacts=artifacts_dump,
+                request_id=request_id,
+                category=category,
+                task_type=task_type,
+                mission_id=mission_id,
+            )
+
             return (
                 plan_dump,
                 execution_dump,
@@ -3507,6 +4016,14 @@ def _execute_agent_workflow(
             extract_artifacts(
                 execution_dump
             )
+        )
+
+        _audit_generated_artifacts(
+            artifacts=artifacts_dump,
+            request_id=request_id,
+            category=category,
+            task_type=task_type,
+            mission_id=mission_id,
         )
 
         if artifacts_dump:
@@ -3538,12 +4055,86 @@ def _execute_agent_workflow(
                     "produce any completed results."
                 )
 
+        _audit_success(
+            category=category,
+            action=(
+                "mission_workflow_response_ready"
+                if mission_control
+                else "agent_workflow_response_ready"
+            ),
+            service="agents",
+            message=(
+                "Mission response synthesized."
+                if mission_control
+                else "Agent response synthesized."
+            ),
+            request_id=request_id,
+            task_type=task_type,
+            resource=(
+                "mission"
+                if mission_control
+                else "agent"
+            ),
+            resource_id=mission_id,
+            duration_ms=_duration_ms(
+                workflow_started_at
+            ),
+            metadata={
+                "mission_id": mission_id,
+                "artifact_count": len(
+                    artifacts_dump
+                ),
+                "evidence_review": evidence_review,
+                "response_length": len(
+                    response
+                ),
+            },
+        )
+
         return (
             plan_dump,
             execution_dump,
             artifacts_dump,
             response,
         )
+
+    except Exception as exc:
+        _audit_failure(
+            category=category,
+            action=(
+                "mission_workflow"
+                if mission_control
+                else "agent_workflow"
+            ),
+            service="agents",
+            message=(
+                "Mission workflow failed."
+                if mission_control
+                else "Agent workflow failed."
+            ),
+            request_id=request_id,
+            task_type=task_type,
+            resource=(
+                "mission"
+                if mission_control
+                else "agent"
+            ),
+            resource_id=mission_id,
+            duration_ms=_duration_ms(
+                workflow_started_at
+            ),
+            metadata={
+                "mission_id": mission_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(
+                    exc
+                )[:1200],
+            },
+        )
+
+        raise
 
     finally:
         _cleanup_staged_files(
@@ -3703,13 +4294,67 @@ def run_agent(
     db: Session = Depends(get_db),
 ) -> AgentRunResponse:
 
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     objective = request.objective.strip()
 
     if not objective:
+        _audit_failure(
+            category="agent",
+            action="agent_run_validation",
+            service="agents",
+            message="Agent objective cannot be empty.",
+            request_id=request_id,
+            task_type="agent",
+            metadata={
+                "reason": "empty_objective",
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Objective cannot be empty.",
         )
+
+    request_context: Dict[
+        str,
+        Any,
+    ] = dict(
+        request.context or {}
+    )
+
+    request_context[
+        "audit_request_id"
+    ] = request_id
+
+    _audit_success(
+        category="agent",
+        action="agent_run_started",
+        service="agents",
+        message="Agent workflow started.",
+        request_id=request_id,
+        task_type="agent",
+        resource="agent",
+        metadata={
+            "objective_length": len(
+                objective
+            ),
+            "auto_confirm": bool(
+                request.auto_confirm
+            ),
+            "attachment_count": len(
+                _get_context_attachments(
+                    request_context
+                )
+            ),
+            "vault_file_count": len(
+                _get_context_vault_file_ids(
+                    request_context
+                )
+            ),
+        },
+    )
 
     try:
         (
@@ -3719,7 +4364,7 @@ def run_agent(
             response,
         ) = _execute_agent_workflow(
             objective=objective,
-            context=request.context,
+            context=request_context,
             auto_confirm=request.auto_confirm,
         )
 
@@ -3731,8 +4376,55 @@ def run_agent(
                 execution_dump=execution_dump,
                 artifacts_dump=artifacts_dump,
                 response=response,
-                request_context=request.context,
+                request_context=request_context,
             )
+        )
+
+        _audit_success(
+            category="agent",
+            action="agent_run_completed",
+            service="agents",
+            message="Agent workflow completed successfully.",
+            request_id=request_id,
+            task_type="agent",
+            resource="agent",
+            resource_id=conversation_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "conversation_id": conversation_id,
+                "artifact_count": len(
+                    artifacts_dump
+                ),
+                "execution_status": str(
+                    execution_dump.get(
+                        "status",
+                        "",
+                    )
+                ),
+                "completed_steps": len(
+                    execution_dump.get(
+                        "completed_steps",
+                        [],
+                    )
+                    or []
+                ),
+                "failed_steps": len(
+                    execution_dump.get(
+                        "failed_steps",
+                        [],
+                    )
+                    or []
+                ),
+                "blocked_steps": len(
+                    execution_dump.get(
+                        "blocked_steps",
+                        [],
+                    )
+                    or []
+                ),
+            },
         )
 
         return AgentRunResponse(
@@ -3747,6 +4439,27 @@ def run_agent(
         raise
 
     except Exception as exc:
+        _audit_failure(
+            category="agent",
+            action="agent_run_failed",
+            service="agents",
+            message="Agent workflow failed.",
+            request_id=request_id,
+            task_type="agent",
+            resource="agent",
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(
+                    exc
+                )[:1200],
+            },
+        )
+
         print(
             f"NOVA Agent execution internal error: {exc}"
         )
@@ -3780,16 +4493,43 @@ def run_mission(
     - Knowledge Vault file selections
     """
 
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     title = request.title.strip()
     objective = request.objective.strip()
 
     if not title:
+        _audit_failure(
+            category="mission",
+            action="mission_run_validation",
+            service="agents",
+            message="Mission title cannot be empty.",
+            request_id=request_id,
+            task_type="mission",
+            metadata={
+                "reason": "empty_title",
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Mission title cannot be empty.",
         )
 
     if not objective:
+        _audit_failure(
+            category="mission",
+            action="mission_run_validation",
+            service="agents",
+            message="Mission objective cannot be empty.",
+            request_id=request_id,
+            task_type="mission",
+            metadata={
+                "reason": "empty_objective",
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Mission objective cannot be empty.",
@@ -3816,6 +4556,10 @@ def run_mission(
     )
 
     mission_context[
+        "audit_request_id"
+    ] = request_id
+
+    mission_context[
         "mission_control"
     ] = True
 
@@ -3829,11 +4573,62 @@ def run_mission(
         )
     )
 
+    _audit_success(
+        category="mission",
+        action="mission_run_started",
+        service="agents",
+        message=(
+            f"Mission '{title}' started."
+        ),
+        request_id=request_id,
+        task_type="mission",
+        resource="mission",
+        resource_id=mission_id,
+        metadata={
+            "mission_id": mission_id,
+            "title": title,
+            "objective_length": len(
+                objective
+            ),
+            "auto_confirm": bool(
+                request.auto_confirm
+            ),
+            "evidence_count": len(
+                source_references
+            ),
+            "knowledge_vault_evidence_count": sum(
+                1
+                for reference in source_references
+                if reference.get(
+                    "source_type"
+                ) == "knowledge-vault"
+            ),
+        },
+    )
+
     # -----------------------------------------------------------------------
     # REAL EVIDENCE REQUIREMENT
     # -----------------------------------------------------------------------
 
     if not source_references:
+        _audit_failure(
+            category="mission",
+            action="mission_run_validation",
+            service="agents",
+            message=(
+                "Mission rejected because no real evidence file was supplied."
+            ),
+            request_id=request_id,
+            task_type="mission",
+            resource="mission",
+            resource_id=mission_id,
+            metadata={
+                "reason": "no_evidence",
+                "mission_id": mission_id,
+                "title": title,
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=(
@@ -3894,6 +4689,27 @@ def run_mission(
                 )
 
         except FileNotFoundError as exc:
+            _audit_failure(
+                category="mission",
+                action="mission_evidence_validation",
+                service="agents",
+                message=(
+                    "Mission evidence file is unavailable."
+                ),
+                request_id=request_id,
+                task_type="mission",
+                resource="file",
+                resource_id=file_id,
+                metadata={
+                    "mission_id": mission_id,
+                    "filename": reference.get(
+                        "filename"
+                    ),
+                    "source_type": source_type,
+                    "reason": "file_not_found",
+                },
+            )
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -3903,6 +4719,32 @@ def run_mission(
             ) from exc
 
         except Exception as exc:
+            _audit_failure(
+                category="mission",
+                action="mission_evidence_validation",
+                service="agents",
+                message=(
+                    "Mission evidence validation failed."
+                ),
+                request_id=request_id,
+                task_type="mission",
+                resource="file",
+                resource_id=file_id,
+                metadata={
+                    "mission_id": mission_id,
+                    "filename": reference.get(
+                        "filename"
+                    ),
+                    "source_type": source_type,
+                    "error_type": type(
+                        exc
+                    ).__name__,
+                    "error": str(
+                        exc
+                    )[:1200],
+                },
+            )
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -3919,6 +4761,25 @@ def run_mission(
         if extension not in (
             ALLOWED_ATTACHMENT_EXTENSIONS
         ):
+            _audit_failure(
+                category="mission",
+                action="mission_evidence_validation",
+                service="agents",
+                message=(
+                    "Mission contains an unsupported evidence file."
+                ),
+                request_id=request_id,
+                task_type="mission",
+                resource="file",
+                resource_id=file_id,
+                metadata={
+                    "mission_id": mission_id,
+                    "filename": source_path.name,
+                    "extension": extension,
+                    "reason": "unsupported_extension",
+                },
+            )
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -4120,6 +4981,76 @@ def run_mission(
             ),
         }
 
+        terminal_audit_status = (
+            "success"
+            if mission_status
+            == "COMPLETED"
+            else "failed"
+        )
+
+        terminal_message_map = {
+            "COMPLETED": (
+                f"Mission '{title}' completed successfully."
+            ),
+            "STOPPED": (
+                f"Mission '{title}' was stopped."
+            ),
+            "FAILED": (
+                f"Mission '{title}' failed."
+            ),
+            "BLOCKED": (
+                f"Mission '{title}' is blocked."
+            ),
+        }
+
+        _safe_audit(
+            category="mission",
+            action="mission_run_completed",
+            service="agents",
+            status=terminal_audit_status,
+            message=terminal_message_map.get(
+                mission_status,
+                f"Mission '{title}' finished with status {mission_status}.",
+            ),
+            request_id=request_id,
+            task_type="mission",
+            resource="mission",
+            resource_id=mission_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "mission_id": mission_id,
+                "title": title,
+                "mission_status": mission_status,
+                "execution_status": execution_status,
+                "conversation_id": conversation_id,
+                "artifact_count": len(
+                    artifacts_dump
+                ),
+                "evidence_count": len(
+                    source_references
+                ),
+                "knowledge_vault_evidence_count": sum(
+                    1
+                    for reference in source_references
+                    if reference.get(
+                        "source_type"
+                    ) == "knowledge-vault"
+                ),
+                "failed_steps": len(
+                    failed_steps
+                ),
+                "blocked_steps": len(
+                    blocked_steps
+                ),
+                "mission_cancelled": mission_cancelled,
+                "mission_deliverable_error": bool(
+                    mission_deliverable_error
+                ),
+            },
+        )
+
         return MissionRunResponse(
             mission_id=mission_id,
             title=title,
@@ -4136,6 +5067,32 @@ def run_mission(
         raise
 
     except Exception as exc:
+        _audit_failure(
+            category="mission",
+            action="mission_run_failed",
+            service="agents",
+            message=(
+                f"Mission '{title}' encountered an internal execution error."
+            ),
+            request_id=request_id,
+            task_type="mission",
+            resource="mission",
+            resource_id=mission_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "mission_id": mission_id,
+                "title": title,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(
+                    exc
+                )[:1200],
+            },
+        )
+
         print(
             f"NOVA Mission execution internal error: {exc}"
         )
@@ -4166,11 +5123,27 @@ def stop_mission(
     stops before starting remaining steps.
     """
 
+    started_at = time.perf_counter()
+
     normalized_mission_id = str(
         mission_id or ""
     ).strip()
 
+    request_id = create_request_id()
+
     if not normalized_mission_id:
+        _audit_failure(
+            category="mission",
+            action="mission_stop_validation",
+            service="agents",
+            message="Mission ID cannot be empty.",
+            request_id=request_id,
+            task_type="mission",
+            metadata={
+                "reason": "empty_mission_id",
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Mission ID cannot be empty.",
@@ -4181,10 +5154,51 @@ def stop_mission(
     )
 
     if not accepted:
+        _audit_failure(
+            category="mission",
+            action="mission_stop_request",
+            service="agents",
+            message=(
+                "Mission stop request was rejected because the mission ID is invalid."
+            ),
+            request_id=request_id,
+            task_type="mission",
+            resource="mission",
+            resource_id=normalized_mission_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "mission_id": normalized_mission_id,
+                "accepted": False,
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Invalid mission ID.",
         )
+
+    _audit_success(
+        category="mission",
+        action="mission_stop_requested",
+        service="agents.executor",
+        message=(
+            f"Mission stop requested for {normalized_mission_id}."
+        ),
+        request_id=request_id,
+        task_type="mission",
+        resource="mission",
+        resource_id=normalized_mission_id,
+        duration_ms=_duration_ms(
+            started_at
+        ),
+        metadata={
+            "mission_id": normalized_mission_id,
+            "accepted": True,
+            "stop_mode": "cooperative",
+        },
+    )
 
     return {
         "mission_id": normalized_mission_id,
@@ -4212,11 +5226,27 @@ def delete_mission(
     Source files, including Knowledge Vault files, remain untouched.
     """
 
+    started_at = time.perf_counter()
+
     normalized_mission_id = str(
         mission_id or ""
     ).strip()
 
+    request_id = create_request_id()
+
     if not normalized_mission_id:
+        _audit_failure(
+            category="mission",
+            action="mission_delete_validation",
+            service="agents",
+            message="Mission ID cannot be empty.",
+            request_id=request_id,
+            task_type="mission",
+            metadata={
+                "reason": "empty_mission_id",
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Mission ID cannot be empty.",
@@ -4224,6 +5254,29 @@ def delete_mission(
 
     cancellation_requested = set_mission_cancelled(
         normalized_mission_id
+    )
+
+    _audit_success(
+        category="mission",
+        action="mission_delete_requested",
+        service="agents",
+        message=(
+            f"Mission deletion request accepted for {normalized_mission_id}."
+        ),
+        request_id=request_id,
+        task_type="mission",
+        resource="mission",
+        resource_id=normalized_mission_id,
+        duration_ms=_duration_ms(
+            started_at
+        ),
+        metadata={
+            "mission_id": normalized_mission_id,
+            "cancel_requested": bool(
+                cancellation_requested
+            ),
+            "source_files_preserved": True,
+        },
     )
 
     return {

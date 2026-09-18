@@ -1,16 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Command, Search, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  AnimatePresence,
+  motion,
+} from "framer-motion";
+
+import {
+  Command,
+  Search,
+  X,
+} from "lucide-react";
+
+import { useAuth } from "./context/AuthContext";
+
+import LoginPage from "./components/auth/LoginPage";
+import RegisterPage from "./components/auth/RegisterPage";
 
 import Sidebar from "./components/layout/Sidebar";
 import Topbar from "./components/layout/Topbar";
 import CommandCenter from "./components/dashboard/CommandCenter";
-import Missions from "./components/dashboard/Missions";
 import ChatWindow from "./components/chat/ChatWindow";
 import KnowledgeVault from "./components/knowledge/KnowledgeVault";
 import VoiceController from "./components/voice/VoiceController";
+import SovereigntyCenter from "./components/sovereignty/SovereigntyCenter";
+import AIModels from "./components/models/AIModels";
+import AuditTrail from "./components/audit/AuditTrail";
+import Analytics from "./components/analytics/Analytics";
 
-const API_URL = "http://127.0.0.1:8001";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8001";
 
 const pages = {
   command: "Command Center",
@@ -20,10 +43,19 @@ const pages = {
   models: "AI Models",
   sovereignty: "Sovereignty",
   audit: "Audit Trail",
-  analytics: "Analytics",
+  analytics: "Analytics Center",
 };
 
-function PlaceholderPage({ page, onBack }) {
+
+
+/* =========================================================
+   PLACEHOLDER PAGE
+   ========================================================= */
+
+function PlaceholderPage({
+  page,
+  onBack,
+}) {
   return (
     <motion.div
       className="placeholder-page"
@@ -47,9 +79,13 @@ function PlaceholderPage({ page, onBack }) {
         <Command size={28} />
       </div>
 
-      <span>MODULE INITIALIZATION</span>
+      <span>
+        MODULE INITIALIZATION
+      </span>
 
-      <h1>{pages[page]}</h1>
+      <h1>
+        {pages[page]}
+      </h1>
 
       <p>
         This NOVA module is part of the
@@ -70,22 +106,63 @@ function PlaceholderPage({ page, onBack }) {
   );
 }
 
-function CommandPalette({ onClose, onNavigate }) {
+
+
+/* =========================================================
+   COMMAND PALETTE
+   ========================================================= */
+
+function CommandPalette({
+  onClose,
+  onNavigate,
+}) {
   const commands = [
-    ["command", "Open Command Center"],
-    ["chat", "Open Local Chat"],
-    ["missions", "Start New Mission"],
-    ["knowledge", "Open Knowledge Vault"],
-    ["models", "Open AI Models"],
-    ["sovereignty", "Check Sovereignty"],
+    [
+      "command",
+      "Open Command Center",
+    ],
+    [
+      "chat",
+      "Open Local Chat",
+    ],
+    [
+      "missions",
+      "Start New Mission",
+    ],
+    [
+      "knowledge",
+      "Open Knowledge Vault",
+    ],
+    [
+      "models",
+      "Open AI Models",
+    ],
+    [
+      "sovereignty",
+      "Check Sovereignty",
+    ],
+    [
+      "audit",
+      "Open Audit Trail",
+    ],
+    [
+      "analytics",
+      "Open Analytics Center",
+    ],
   ];
 
   return (
     <motion.div
       className="command-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      initial={{
+        opacity: 0,
+      }}
+      animate={{
+        opacity: 1,
+      }}
+      exit={{
+        opacity: 0,
+      }}
       onMouseDown={onClose}
     >
       <motion.div
@@ -115,7 +192,9 @@ function CommandPalette({ onClose, onNavigate }) {
             placeholder="Search NOVA..."
           />
 
-          <kbd>ESC</kbd>
+          <kbd>
+            ESC
+          </kbd>
 
           <button
             type="button"
@@ -127,140 +206,412 @@ function CommandPalette({ onClose, onNavigate }) {
         </div>
 
         <div className="command-results">
-          {commands.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                onNavigate(id);
-                onClose();
-              }}
-            >
-              <span>{label}</span>
-              <span>↵</span>
-            </button>
-          ))}
+          {commands.map(
+            ([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  onNavigate(id);
+                  onClose();
+                }}
+              >
+                <span>
+                  {label}
+                </span>
+
+                <span>
+                  ↵
+                </span>
+              </button>
+            )
+          )}
         </div>
       </motion.div>
     </motion.div>
   );
 }
 
-function App() {
-  const [activePage, setActivePage] =
-    useState("command");
 
-  const [mobileSidebar, setMobileSidebar] =
-    useState(false);
 
-  const [commandOpen, setCommandOpen] =
-    useState(false);
+/* =========================================================
+   AUTHENTICATION GATE
+   ========================================================= */
 
-  const [conversations, setConversations] =
-    useState([]);
+function AuthenticationGate() {
+  const {
+    isAuthenticated,
+    isLoading,
+    error,
+    login,
+    register,
+    clearError,
+  } = useAuth();
+
+  const [
+    authView,
+    setAuthView,
+  ] = useState("login");
+
+  const [
+    authNotice,
+    setAuthNotice,
+  ] = useState("");
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setAuthView("login");
+      setAuthNotice("");
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin =
+    useCallback(
+      async (credentials) => {
+        setAuthNotice("");
+        clearError();
+
+        return login(credentials);
+      },
+      [
+        clearError,
+        login,
+      ]
+    );
+
+  const handleRegister =
+    useCallback(
+      async (credentials) => {
+        setAuthNotice("");
+        clearError();
+
+        const result =
+          await register(credentials);
+
+        if (
+          result?.success &&
+          !result?.user
+        ) {
+          setAuthView("login");
+          setAuthNotice(
+            "Account created successfully. Sign in to continue."
+          );
+        }
+
+        return result;
+      },
+      [
+        clearError,
+        register,
+      ]
+    );
+
+  const handleForgotPassword =
+    useCallback(() => {
+      setAuthNotice(
+        "Password recovery is not configured in this local workspace."
+      );
+    }, []);
+
+  const handleCreateAccount =
+    useCallback(() => {
+      clearError();
+      setAuthNotice("");
+      setAuthView("register");
+    }, [clearError]);
+
+  const handleBackToLogin =
+    useCallback(() => {
+      clearError();
+      setAuthNotice("");
+      setAuthView("login");
+    }, [clearError]);
+
+  if (isLoading) {
+    return null;
+  }
+
+  if (isAuthenticated) {
+    return null;
+  }
+
+  if (authView === "register") {
+    return (
+      <RegisterPage
+        onRegister={handleRegister}
+        onBackToLogin={handleBackToLogin}
+        isLoading={isLoading}
+        authError={error}
+      />
+    );
+  }
+
+  return (
+    <>
+      <LoginPage
+        onLogin={handleLogin}
+        onForgotPassword={
+          handleForgotPassword
+        }
+        onCreateAccount={
+          handleCreateAccount
+        }
+        isLoading={isLoading}
+        authError={error}
+      />
+
+      {authNotice ? (
+        <div
+          className="nova-auth-global-notice"
+          role="status"
+          aria-live="polite"
+        >
+          {authNotice}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+
+
+/* =========================================================
+   MAIN NOVA WORKSPACE
+   ========================================================= */
+
+function NovaWorkspace() {
+  const {
+    isAuthenticated,
+  } = useAuth();
+
+  const [
+    activePage,
+    setActivePage,
+  ] = useState("command");
+
+  const [
+    mobileSidebar,
+    setMobileSidebar,
+  ] = useState(false);
+
+  const [
+    commandOpen,
+    setCommandOpen,
+  ] = useState(false);
+
+  const [
+    conversations,
+    setConversations,
+  ] = useState([]);
 
   const [
     activeConversationId,
     setActiveConversationId,
   ] = useState(null);
 
-  const [historyLoading, setHistoryLoading] =
-    useState(false);
+  const [
+    historyLoading,
+    setHistoryLoading,
+  ] = useState(false);
+
+
+
+  /* =======================================================
+     LOAD CONVERSATIONS
+     ======================================================= */
 
   const loadConversations =
-    useCallback(async () => {
-      try {
-        setHistoryLoading(true);
-
-        const response = await fetch(
-          `${API_URL}/api/history/conversations`
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            "Unable to load chat history."
-          );
+    useCallback(
+      async () => {
+        if (
+          !isAuthenticated
+        ) {
+          setConversations([]);
+          return;
         }
 
-        const data =
-          await response.json();
+        try {
+          setHistoryLoading(true);
 
-        const savedConversations =
-          Array.isArray(
-            data?.conversations
-          )
-            ? data.conversations
-            : [];
+          const response =
+            await fetch(
+              `${API_URL}/api/history/conversations`,
+              {
+                method: "GET",
+                credentials: "include",
+              }
+            );
 
-        setConversations(
-          savedConversations
-        );
-      } catch (error) {
-        console.error(
-          "Chat history loading error:",
-          error
-        );
-      } finally {
-        setHistoryLoading(false);
-      }
-    }, []);
+          if (
+            response.status === 401
+          ) {
+            setConversations([]);
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(
+              "Unable to load chat history."
+            );
+          }
+
+          const data =
+            await response.json();
+
+          const savedConversations =
+            Array.isArray(
+              data?.conversations
+            )
+              ? data.conversations
+              : [];
+
+          setConversations(
+            savedConversations
+          );
+        } catch (error) {
+          console.error(
+            "Chat history loading error:",
+            error
+          );
+        } finally {
+          setHistoryLoading(false);
+        }
+      },
+      [
+        isAuthenticated,
+      ]
+    );
+
+
+
+  /* =======================================================
+     INITIAL HISTORY LOAD
+     ======================================================= */
 
   useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
+    if (isAuthenticated) {
+      loadConversations();
+    } else {
+      setConversations([]);
+      setActiveConversationId(null);
+    }
+  }, [
+    isAuthenticated,
+    loadConversations,
+  ]);
 
-  const navigate = (page) => {
+
+
+  /* =======================================================
+     NAVIGATION
+     ======================================================= */
+
+  const navigate = (
+    page
+  ) => {
     setActivePage(page);
     setMobileSidebar(false);
     setCommandOpen(false);
   };
 
-  const handleNewConversation = () => {
-    setActiveConversationId(null);
-    setActivePage("chat");
-    setMobileSidebar(false);
-  };
 
-  const handleSelectConversation = (
-    conversationId
-  ) => {
-    if (!conversationId) {
-      return;
-    }
 
-    setActiveConversationId(
+  /* =======================================================
+     NEW CONVERSATION
+     ======================================================= */
+
+  const handleNewConversation =
+    () => {
+      setActiveConversationId(
+        null
+      );
+
+      setActivePage(
+        "chat"
+      );
+
+      setMobileSidebar(
+        false
+      );
+    };
+
+
+
+  /* =======================================================
+     SELECT SAVED CONVERSATION
+     ======================================================= */
+
+  const handleSelectConversation =
+    (
       conversationId
-    );
+    ) => {
+      if (!conversationId) {
+        return;
+      }
 
-    setActivePage("chat");
-    setMobileSidebar(false);
-  };
+      setActiveConversationId(
+        conversationId
+      );
 
-  const handleConversationChange = (
-    conversationId
-  ) => {
-    if (!conversationId) {
-      return;
-    }
+      setActivePage(
+        "chat"
+      );
 
-    setActiveConversationId(
+      setMobileSidebar(
+        false
+      );
+    };
+
+
+
+  /* =======================================================
+     CONVERSATION ID CREATED BY BACKEND
+     ======================================================= */
+
+  const handleConversationChange =
+    (
       conversationId
-    );
+    ) => {
+      if (!conversationId) {
+        return;
+      }
 
-    setActivePage("chat");
-  };
+      setActiveConversationId(
+        conversationId
+      );
+
+      setActivePage(
+        "chat"
+      );
+    };
+
+
+
+  /* =======================================================
+     DELETE CONVERSATION
+     ======================================================= */
 
   const handleDeleteConversation =
-    async (conversationId) => {
-      if (!conversationId) {
+    async (
+      conversationId
+    ) => {
+      if (
+        !conversationId
+      ) {
         return;
       }
 
       const conversation =
         conversations.find(
-          (item) =>
-            String(item.id) ===
-            String(conversationId)
+          (
+            item
+          ) =>
+            String(
+              item.id
+            ) ===
+            String(
+              conversationId
+            )
         );
 
       const confirmed =
@@ -280,7 +631,9 @@ function App() {
           await fetch(
             `${API_URL}/api/history/conversations/${conversationId}`,
             {
-              method: "DELETE",
+              method:
+                "DELETE",
+              credentials: "include",
             }
           );
 
@@ -299,26 +652,47 @@ function App() {
             // Keep default message.
           }
 
-          throw new Error(message);
+          throw new Error(
+            message
+          );
         }
 
         setConversations(
-          (current) =>
+          (
+            current
+          ) =>
             current.filter(
-              (item) =>
-                String(item.id) !==
-                String(conversationId)
+              (
+                item
+              ) =>
+                String(
+                  item.id
+                ) !==
+                String(
+                  conversationId
+                )
             )
         );
 
         if (
-          String(activeConversationId) ===
-          String(conversationId)
+          String(
+            activeConversationId
+          ) ===
+          String(
+            conversationId
+          )
         ) {
-          setActiveConversationId(null);
-          setActivePage("chat");
+          setActiveConversationId(
+            null
+          );
+
+          setActivePage(
+            "chat"
+          );
         }
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Conversation deletion error:",
           error
@@ -331,21 +705,54 @@ function App() {
       }
     };
 
+
+
+  /* =======================================================
+     WAIT FOR AUTH
+     ======================================================= */
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+
+
+  /* =======================================================
+     RENDER
+     ======================================================= */
+
   return (
     <div className="nova-app">
+
       <div className="background-grid" />
 
       <div className="background-glow glow-one" />
 
       <div className="background-glow glow-two" />
 
+      {/* Global NOVA voice runtime */}
+
       <VoiceController />
 
+
+
+      {/* =================================================
+          SIDEBAR
+          ================================================= */}
+
       <Sidebar
-        activePage={activePage}
-        onNavigate={navigate}
-        mobileOpen={mobileSidebar}
-        conversations={conversations}
+        activePage={
+          activePage
+        }
+        onNavigate={
+          navigate
+        }
+        mobileOpen={
+          mobileSidebar
+        }
+        conversations={
+          conversations
+        }
         activeConversationId={
           activeConversationId
         }
@@ -360,32 +767,62 @@ function App() {
         }
       />
 
+
+
+      {/* =================================================
+          MOBILE SIDEBAR BACKDROP
+          ================================================= */}
+
       {mobileSidebar && (
         <button
           className="mobile-backdrop"
           type="button"
           onClick={() =>
-            setMobileSidebar(false)
+            setMobileSidebar(
+              false
+            )
           }
           aria-label="Close sidebar"
         />
       )}
 
+
+
+      {/* =================================================
+          MAIN AREA
+          ================================================= */}
+
       <div className="nova-main">
+
         <Topbar
           activePage={
-            pages[activePage]
+            pages[
+              activePage
+            ]
           }
           onMenuClick={() =>
-            setMobileSidebar(true)
+            setMobileSidebar(
+              true
+            )
           }
           onCommandClick={() =>
-            setCommandOpen(true)
+            setCommandOpen(
+              true
+            )
           }
         />
 
+
+
         <AnimatePresence mode="wait">
-          {activePage === "command" ? (
+
+          {/* =================================================
+              COMMAND CENTER
+              ================================================= */}
+
+          {activePage ===
+          "command" ? (
+
             <motion.div
               key="command"
               initial={{
@@ -399,10 +836,17 @@ function App() {
               }}
             >
               <CommandCenter
-                onNavigate={navigate}
+                onNavigate={
+                  navigate
+                }
               />
             </motion.div>
-          ) : activePage === "chat" ? (
+
+
+
+          ) : activePage ===
+            "chat" ? (
+
             <motion.div
               key={`chat-${
                 activeConversationId ||
@@ -440,31 +884,12 @@ function App() {
                 }
               />
             </motion.div>
-          ) : activePage === "missions" ? (
-            <motion.div
-              key="missions"
-              initial={{
-                opacity: 0,
-                y: 16,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-              }}
-              exit={{
-                opacity: 0,
-                y: -10,
-              }}
-              transition={{
-                duration: 0.35,
-                ease: "easeOut",
-              }}
-            >
-              <Missions
-                onNavigate={navigate}
-              />
-            </motion.div>
-          ) : activePage === "knowledge" ? (
+
+
+
+          ) : activePage ===
+            "knowledge" ? (
+
             <motion.div
               key="knowledge"
               initial={{
@@ -486,28 +911,165 @@ function App() {
             >
               <KnowledgeVault />
             </motion.div>
+
+
+
+          ) : activePage ===
+            "models" ? (
+
+            <motion.div
+              key="models"
+              initial={{
+                opacity: 0,
+                y: 14,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <AIModels />
+            </motion.div>
+
+
+
+          ) : activePage ===
+            "sovereignty" ? (
+
+            <motion.div
+              key="sovereignty"
+              initial={{
+                opacity: 0,
+                y: 14,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <SovereigntyCenter />
+            </motion.div>
+
+
+
+          ) : activePage ===
+            "audit" ? (
+
+            <motion.div
+              key="audit"
+              initial={{
+                opacity: 0,
+                y: 14,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <AuditTrail />
+            </motion.div>
+
+
+
+          ) : activePage ===
+            "analytics" ? (
+
+            <motion.div
+              key="analytics"
+              initial={{
+                opacity: 0,
+                y: 14,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <Analytics
+                onNavigate={
+                  navigate
+                }
+              />
+            </motion.div>
+
+
+
           ) : (
+
             <PlaceholderPage
               key={activePage}
               page={activePage}
               onBack={() =>
-                navigate("command")
+                navigate(
+                  "command"
+                )
               }
             />
           )}
+
         </AnimatePresence>
       </div>
 
+
+
+      {/* =================================================
+          COMMAND PALETTE
+          ================================================= */}
+
       <AnimatePresence>
+
         {commandOpen && (
           <CommandPalette
             onClose={() =>
-              setCommandOpen(false)
+              setCommandOpen(
+                false
+              )
             }
-            onNavigate={navigate}
+            onNavigate={
+              navigate
+            }
           />
         )}
+
       </AnimatePresence>
+
+
+
+      {/* =================================================
+          HISTORY SYNC INDICATOR
+          ================================================= */}
 
       {historyLoading && (
         <div
@@ -517,7 +1079,62 @@ function App() {
           SYNCING CHAT HISTORY
         </div>
       )}
+
     </div>
+  );
+}
+
+
+
+/* =========================================================
+   ROOT APP
+   ========================================================= */
+
+function App() {
+  return (
+    <AuthenticatedApp />
+  );
+}
+
+function AuthenticatedApp() {
+  const {
+    isAuthenticated,
+    isLoading,
+  } = useAuth();
+
+  if (
+    isLoading &&
+    !isAuthenticated
+  ) {
+    return (
+      <main
+        className="nova-auth-page"
+        aria-busy="true"
+        aria-label="Loading NOVA"
+      >
+        <div className="nova-auth-loading">
+          <span className="nova-auth-loading-mark">
+            NOVA
+          </span>
+
+          <span className="nova-auth-loader" />
+
+          <span className="nova-auth-loading-text">
+            VERIFYING SESSION
+          </span>
+        </div>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <AuthenticationGate />
+    );
+  }
+
+  return (
+    <NovaWorkspace />
   );
 }
 

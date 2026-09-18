@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -14,6 +16,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.knowledge.rag import index_document
+from app.services.audit.service import (
+    audit_service,
+    create_request_id,
+)
 from app.services.chat_files import (
     MAX_UPLOAD_SIZE,
     save_chat_file,
@@ -91,6 +97,146 @@ ALLOWED_EXTENSIONS = {
     ".jpeg",
     ".webp",
 }
+
+
+# ---------------------------------------------------------------------------
+# AUDIT
+# ---------------------------------------------------------------------------
+
+def _safe_audit(
+    method_name: str,
+    *,
+    category: str = "knowledge",
+    action: str,
+    service: str = "knowledge",
+    status: str = "SUCCESS",
+    message: str = "",
+    request_id: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    model: Optional[str] = None,
+    task_type: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Best-effort audit adapter.
+
+    The audit subsystem must never become a dependency that can break
+    Knowledge Vault functionality. We also filter keyword arguments against
+    the actual audit method signature so this module remains compatible with
+    the authoritative audit service implementation.
+    """
+    try:
+        method = getattr(
+            audit_service,
+            method_name,
+            None,
+        )
+
+        if method is None:
+            return
+
+        payload = {
+            "category": category,
+            "action": action,
+            "service": service,
+            "status": status,
+            "message": message,
+            "request_id": request_id,
+            "resource_id": resource_id,
+            "model": model,
+            "task_type": task_type,
+            "duration_ms": duration_ms,
+            "metadata": metadata or {},
+        }
+
+        try:
+            signature = inspect.signature(
+                method
+            )
+
+            parameters = signature.parameters
+
+            has_var_kwargs = any(
+                parameter.kind
+                == inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+
+            if not has_var_kwargs:
+                payload = {
+                    key: value
+                    for key, value in payload.items()
+                    if key in parameters
+                }
+
+        except Exception:
+            pass
+
+        method(
+            **payload
+        )
+
+    except Exception as exc:
+        print(
+            "[NOVA AUDIT WARNING] "
+            f"Knowledge audit event failed: {exc}"
+        )
+
+
+def _audit_success(
+    *,
+    action: str,
+    message: str,
+    request_id: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    _safe_audit(
+        "success",
+        action=action,
+        status="SUCCESS",
+        message=message,
+        request_id=request_id,
+        resource_id=resource_id,
+        duration_ms=duration_ms,
+        metadata=metadata,
+    )
+
+
+def _audit_failure(
+    *,
+    action: str,
+    message: str,
+    request_id: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    duration_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    _safe_audit(
+        "failure",
+        action=action,
+        status="FAILED",
+        message=message,
+        request_id=request_id,
+        resource_id=resource_id,
+        duration_ms=duration_ms,
+        metadata=metadata,
+    )
+
+
+def _duration_ms(
+    started_at: float,
+) -> float:
+    return round(
+        (
+            time.perf_counter()
+            - started_at
+        )
+        * 1000,
+        2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +467,7 @@ def _mark_index_failed(
 def _index_and_register_file(
     file_id: str,
     vault_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the real extraction + vector indexing pipeline and then
@@ -329,6 +476,8 @@ def _index_and_register_file(
     Chroma remains the search index only. The registry remains the
     file-management source of truth.
     """
+
+    started_at = time.perf_counter()
 
     normalized_file_id = _normalize_id(
         file_id,
@@ -351,6 +500,23 @@ def _index_and_register_file(
         if not _vault_exists(
             normalized_vault_id
         ):
+            _audit_failure(
+                action="file_index",
+                message=(
+                    "Knowledge file indexing failed because "
+                    "the target vault was not found."
+                ),
+                request_id=request_id,
+                resource_id=normalized_file_id,
+                duration_ms=_duration_ms(
+                    started_at
+                ),
+                metadata={
+                    "vault_id": normalized_vault_id,
+                    "reason": "vault_not_found",
+                },
+            )
+
             raise HTTPException(
                 status_code=404,
                 detail=(
@@ -369,7 +535,7 @@ def _index_and_register_file(
             file_id=normalized_file_id,
             vault_id=normalized_vault_id,
         )
-    except Exception:
+    except Exception as exc:
         current = get_file(
             normalized_file_id,
         )
@@ -383,6 +549,29 @@ def _index_and_register_file(
                 )
                 or 0
             ),
+        )
+
+        _audit_failure(
+            action="file_index",
+            message=(
+                "Knowledge file extraction or vector "
+                "indexing failed."
+            ),
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": normalized_vault_id,
+                "filename": current.get(
+                    "filename"
+                ),
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
         )
 
         raise
@@ -405,16 +594,44 @@ def _index_and_register_file(
         ),
     )
 
+    index_summary = _extract_index_result(
+        result
+    )
+
+    _audit_success(
+        action="file_index",
+        message=(
+            "Knowledge file was extracted and "
+            "indexed successfully."
+        ),
+        request_id=request_id,
+        resource_id=normalized_file_id,
+        duration_ms=_duration_ms(
+            started_at
+        ),
+        metadata={
+            "vault_id": normalized_vault_id,
+            "filename": updated.get(
+                "filename"
+            )
+            if isinstance(
+                updated,
+                dict,
+            )
+            else None,
+            **index_summary,
+        },
+    )
+
     return {
         "file": updated,
-        "index": _extract_index_result(
-            result
-        ),
+        "index": index_summary,
     }
 
 
 def _index_unassigned_file(
     file_id: str,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Compatibility pipeline for the original
@@ -427,6 +644,7 @@ def _index_unassigned_file(
     return _index_and_register_file(
         file_id=file_id,
         vault_id=None,
+        request_id=request_id,
     )
 
 
@@ -525,9 +743,39 @@ def get_vaults() -> Dict[str, Any]:
 def create_new_vault(
     request: VaultCreateRequest,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     try:
         vault = create_vault(
             request.name,
+        )
+
+        vault_id = (
+            str(
+                vault.get(
+                    "vault_id",
+                    "",
+                )
+            ).strip()
+            or None
+        )
+
+        _audit_success(
+            action="vault_create",
+            message=(
+                "Knowledge Vault created successfully."
+            ),
+            request_id=request_id,
+            resource_id=vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_name": vault.get(
+                    "name"
+                ),
+            },
         )
 
         return {
@@ -536,12 +784,44 @@ def create_new_vault(
         }
 
     except ValueError as exc:
+        _audit_failure(
+            action="vault_create",
+            message="Knowledge Vault creation was rejected.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_name": request.name,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="vault_create",
+            message="Knowledge Vault creation failed.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_name": request.name,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -559,6 +839,9 @@ def rename_existing_vault(
     vault_id: str,
     request: VaultRenameRequest,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_vault_id = _normalize_id(
         vault_id,
         "vault_id",
@@ -570,24 +853,90 @@ def rename_existing_vault(
             request.name,
         )
 
+        _audit_success(
+            action="vault_rename",
+            message=(
+                "Knowledge Vault renamed successfully."
+            ),
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_name": request.name,
+            },
+        )
+
         return {
             "status": "updated",
             "vault": vault,
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="vault_rename",
+            message="Knowledge Vault rename failed because the vault was not found.",
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_name": request.name,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="vault_rename",
+            message="Knowledge Vault rename was rejected.",
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_name": request.name,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="vault_rename",
+            message="Knowledge Vault rename failed.",
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_name": request.name,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -604,6 +953,9 @@ def rename_existing_vault(
 def trash_vault(
     vault_id: str,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_vault_id = _normalize_id(
         vault_id,
         "vault_id",
@@ -614,18 +966,67 @@ def trash_vault(
             normalized_vault_id,
         )
 
+        _audit_success(
+            action="vault_delete",
+            message=(
+                "Knowledge Vault moved to the recovery bin."
+            ),
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+            },
+        )
+
         return {
             "status": "trashed",
             **result,
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="vault_delete",
+            message="Knowledge Vault deletion failed because the vault was not found.",
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="vault_delete",
+            message="Knowledge Vault deletion failed.",
+            request_id=request_id,
+            resource_id=normalized_vault_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -703,6 +1104,9 @@ async def upload_knowledge_file(
     user-created vault.
     """
 
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     filename = _validate_filename(
         file.filename or ""
     )
@@ -739,7 +1143,53 @@ async def upload_knowledge_file(
 
         try:
             result = _index_unassigned_file(
-                file_id
+                file_id,
+                request_id=request_id,
+            )
+
+            _audit_success(
+                action="file_upload",
+                message=(
+                    "Knowledge file uploaded, registered, "
+                    "and indexed successfully."
+                ),
+                request_id=request_id,
+                resource_id=file_id,
+                duration_ms=_duration_ms(
+                    started_at
+                ),
+                metadata={
+                    "filename": filename,
+                    "content_type": (
+                        file.content_type or ""
+                    ),
+                    "size_bytes": len(data),
+                    "vault_id": None,
+                    "indexed": result[
+                        "index"
+                    ].get(
+                        "indexed",
+                        False,
+                    ),
+                    "chunks": result[
+                        "index"
+                    ].get(
+                        "chunks",
+                        0,
+                    ),
+                    "characters": result[
+                        "index"
+                    ].get(
+                        "characters",
+                        0,
+                    ),
+                    "used_ocr": result[
+                        "index"
+                    ].get(
+                        "used_ocr",
+                        False,
+                    ),
+                },
             )
 
             return {
@@ -761,22 +1211,86 @@ async def upload_knowledge_file(
             )
             raise
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Knowledge file upload was rejected.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Knowledge file upload failed because a local source file was not found.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Knowledge file upload validation failed.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Knowledge file upload failed.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -794,6 +1308,9 @@ async def upload_into_vault(
     vault_id: str,
     file: UploadFile = File(...),
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_vault_id = _normalize_id(
         vault_id,
         "vault_id",
@@ -853,6 +1370,52 @@ async def upload_into_vault(
             indexed = _index_and_register_file(
                 file_id=file_id,
                 vault_id=normalized_vault_id,
+                request_id=request_id,
+            )
+
+            _audit_success(
+                action="file_upload",
+                message=(
+                    "Knowledge file uploaded directly into "
+                    "the vault and indexed successfully."
+                ),
+                request_id=request_id,
+                resource_id=file_id,
+                duration_ms=_duration_ms(
+                    started_at
+                ),
+                metadata={
+                    "filename": filename,
+                    "content_type": (
+                        file.content_type or ""
+                    ),
+                    "size_bytes": len(data),
+                    "vault_id": normalized_vault_id,
+                    "indexed": indexed[
+                        "index"
+                    ].get(
+                        "indexed",
+                        False,
+                    ),
+                    "chunks": indexed[
+                        "index"
+                    ].get(
+                        "chunks",
+                        0,
+                    ),
+                    "characters": indexed[
+                        "index"
+                    ].get(
+                        "characters",
+                        0,
+                    ),
+                    "used_ocr": indexed[
+                        "index"
+                    ].get(
+                        "used_ocr",
+                        False,
+                    ),
+                },
             )
 
             return {
@@ -887,22 +1450,90 @@ async def upload_into_vault(
             )
             raise
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Vault file upload was rejected.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "vault_id": normalized_vault_id,
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Vault file upload failed because a local source file was not found.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Vault file upload validation failed.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_upload",
+            message="Vault file upload failed.",
+            request_id=request_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -922,6 +1553,9 @@ def add_chat_file_to_vault(
     vault_id: str,
     file_id: str,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_vault_id = _normalize_id(
         vault_id,
         "vault_id",
@@ -971,6 +1605,42 @@ def add_chat_file_to_vault(
             result = _index_and_register_file(
                 file_id=normalized_file_id,
                 vault_id=normalized_vault_id,
+                request_id=request_id,
+            )
+
+            _audit_success(
+                action="file_add",
+                message=(
+                    "Existing knowledge file added to the "
+                    "vault and indexed successfully."
+                ),
+                request_id=request_id,
+                resource_id=normalized_file_id,
+                duration_ms=_duration_ms(
+                    started_at
+                ),
+                metadata={
+                    "filename": filename,
+                    "vault_id": normalized_vault_id,
+                    "indexed": result[
+                        "index"
+                    ].get(
+                        "indexed",
+                        False,
+                    ),
+                    "chunks": result[
+                        "index"
+                    ].get(
+                        "chunks",
+                        0,
+                    ),
+                    "characters": result[
+                        "index"
+                    ].get(
+                        "characters",
+                        0,
+                    ),
+                },
             )
 
             return {
@@ -992,22 +1662,90 @@ def add_chat_file_to_vault(
             )
             raise
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_add",
+            message="Adding the existing file to the vault was rejected.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": normalized_vault_id,
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_add",
+            message="Adding the existing file to the vault failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_add",
+            message="Adding the existing file to the vault failed validation.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_add",
+            message="Adding the existing file to the vault failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": normalized_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1066,6 +1804,9 @@ def preview_vault_file(
         le=200000,
     ),
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1092,6 +1833,34 @@ def preview_vault_file(
             :max_characters
         ]
 
+        _audit_success(
+            action="file_preview",
+            message=(
+                "Knowledge file preview generated successfully."
+            ),
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": metadata.get(
+                    "filename"
+                ),
+                "file_type": extraction.file_type,
+                "pages": extraction.pages,
+                "used_ocr": extraction.used_ocr,
+                "character_count": len(
+                    extracted_text
+                ),
+                "max_characters": max_characters,
+                "truncated": (
+                    len(extracted_text)
+                    > max_characters
+                ),
+            },
+        )
+
         return {
             "file": metadata,
             "preview": {
@@ -1111,24 +1880,88 @@ def preview_vault_file(
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_preview",
+            message="Knowledge file preview failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_preview",
+            message="Knowledge file preview validation failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except RuntimeError as exc:
+        _audit_failure(
+            action="file_preview",
+            message="Knowledge file preview extraction failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=422,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_preview",
+            message="Knowledge file preview failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1146,6 +1979,9 @@ def rename_vault_file(
     file_id: str,
     request: FileRenameRequest,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1170,6 +2006,13 @@ def rename_vault_file(
             ).strip()
             or None
         )
+
+        old_filename = str(
+            current.get(
+                "filename",
+                "",
+            )
+        ).strip()
 
         if current_vault_id:
             _ensure_unique_vault_filename(
@@ -1197,6 +2040,26 @@ def rename_vault_file(
                 synchronized = _index_and_register_file(
                     file_id=normalized_file_id,
                     vault_id=current_vault_id,
+                    request_id=request_id,
+                )
+
+                _audit_success(
+                    action="file_rename",
+                    message=(
+                        "Knowledge file renamed and its "
+                        "search index synchronized."
+                    ),
+                    request_id=request_id,
+                    resource_id=normalized_file_id,
+                    duration_ms=_duration_ms(
+                        started_at
+                    ),
+                    metadata={
+                        "old_filename": old_filename,
+                        "new_filename": new_filename,
+                        "vault_id": current_vault_id,
+                        "reindexed": True,
+                    },
                 )
 
                 return {
@@ -1218,27 +2081,112 @@ def rename_vault_file(
                 )
                 raise
 
+        _audit_success(
+            action="file_rename",
+            message="Knowledge file renamed successfully.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "old_filename": old_filename,
+                "new_filename": new_filename,
+                "vault_id": current_vault_id,
+                "reindexed": False,
+                "was_indexed": was_indexed,
+            },
+        )
+
         return {
             "status": "updated",
             "file": file_metadata,
         }
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_rename",
+            message="Knowledge file rename was rejected.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_filename": new_filename,
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_rename",
+            message="Knowledge file rename failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_filename": new_filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_rename",
+            message="Knowledge file rename validation failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_filename": new_filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_rename",
+            message="Knowledge file rename failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "new_filename": new_filename,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1256,6 +2204,9 @@ def move_vault_file(
     file_id: str,
     request: FileMoveRequest,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1293,17 +2244,17 @@ def move_vault_file(
             or None
         )
 
+        filename = str(
+            current.get(
+                "filename",
+                "",
+            )
+        ).strip()
+
         if (
             current_vault_id
             != normalized_target_vault_id
         ):
-            filename = str(
-                current.get(
-                    "filename",
-                    "",
-                )
-            ).strip()
-
             if filename:
                 _ensure_unique_vault_filename(
                     normalized_target_vault_id,
@@ -1323,6 +2274,26 @@ def move_vault_file(
             synchronized = _index_and_register_file(
                 file_id=normalized_file_id,
                 vault_id=normalized_target_vault_id,
+                request_id=request_id,
+            )
+
+            _audit_success(
+                action="file_move",
+                message=(
+                    "Knowledge file moved to the target vault "
+                    "and its search index synchronized."
+                ),
+                request_id=request_id,
+                resource_id=normalized_file_id,
+                duration_ms=_duration_ms(
+                    started_at
+                ),
+                metadata={
+                    "filename": filename,
+                    "source_vault_id": current_vault_id,
+                    "target_vault_id": normalized_target_vault_id,
+                    "reindexed": True,
+                },
             )
 
             return {
@@ -1344,22 +2315,90 @@ def move_vault_file(
             )
             raise
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_move",
+            message="Knowledge file move was rejected.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "target_vault_id": normalized_target_vault_id,
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_move",
+            message="Knowledge file move failed because the file or vault was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "target_vault_id": normalized_target_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_move",
+            message="Knowledge file move validation failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "target_vault_id": normalized_target_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_move",
+            message="Knowledge file move failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "target_vault_id": normalized_target_vault_id,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1376,6 +2415,9 @@ def move_vault_file(
 def trash_vault_file(
     file_id: str,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1386,18 +2428,77 @@ def trash_vault_file(
             normalized_file_id,
         )
 
+        _audit_success(
+            action="file_delete",
+            message=(
+                "Knowledge file moved to the recovery bin."
+            ),
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+                "filename": (
+                    deleted.get(
+                        "filename"
+                    )
+                    if isinstance(
+                        deleted,
+                        dict,
+                    )
+                    else None
+                ),
+            },
+        )
+
         return {
             "status": "trashed",
             "file": deleted,
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_delete",
+            message="Knowledge file deletion failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_delete",
+            message="Knowledge file deletion failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "delete_mode": "soft_delete",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1414,6 +2515,9 @@ def trash_vault_file(
 def download_vault_file(
     file_id: str,
 ) -> FileResponse:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1443,19 +2547,69 @@ def download_vault_file(
             or "application/octet-stream"
         )
 
-        return FileResponse(
+        response = FileResponse(
             path=str(path),
             filename=filename,
             media_type=media_type,
         )
 
+        _audit_success(
+            action="file_download",
+            message=(
+                "Knowledge file download prepared successfully."
+            ),
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "filename": filename,
+                "media_type": media_type,
+            },
+        )
+
+        return response
+
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_download",
+            message="Knowledge file download failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_download",
+            message="Knowledge file download failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1472,6 +2626,9 @@ def download_vault_file(
 def reindex_vault_file(
     file_id: str,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_file_id = _normalize_id(
         file_id,
         "file_id",
@@ -1516,6 +2673,7 @@ def reindex_vault_file(
         result = _index_and_register_file(
             file_id=normalized_file_id,
             vault_id=vault_id,
+            request_id=request_id,
         )
 
         if not result["index"].get(
@@ -1530,34 +2688,150 @@ def reindex_vault_file(
                 ),
             )
 
+        _audit_success(
+            action="file_reindex",
+            message=(
+                "Knowledge file re-indexed successfully."
+            ),
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "vault_id": vault_id,
+                "filename": metadata.get(
+                    "filename"
+                ),
+                "chunks": result[
+                    "index"
+                ].get(
+                    "chunks",
+                    0,
+                ),
+                "characters": result[
+                    "index"
+                ].get(
+                    "characters",
+                    0,
+                ),
+                "used_ocr": result[
+                    "index"
+                ].get(
+                    "used_ocr",
+                    False,
+                ),
+            },
+        )
+
         return {
             "status": "indexed",
             "file": result["file"],
             "index": result["index"],
         }
 
-    except HTTPException:
+    except HTTPException as exc:
+        _audit_failure(
+            action="file_reindex",
+            message="Knowledge file re-indexing was rejected.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "status_code": exc.status_code,
+                "error": str(
+                    exc.detail
+                ),
+            },
+        )
+
         raise
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="file_reindex",
+            message="Knowledge file re-indexing failed because the file was not found.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="file_reindex",
+            message="Knowledge file re-indexing validation failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except RuntimeError as exc:
+        _audit_failure(
+            action="file_reindex",
+            message="Knowledge file re-indexing failed during extraction or indexing.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=422,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="file_reindex",
+            message="Knowledge file re-indexing failed.",
+            request_id=request_id,
+            resource_id=normalized_file_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1620,6 +2894,9 @@ def knowledge_bin() -> Dict[str, Any]:
 def restore_bin_item(
     request: RestoreRequest,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     item_type = (
         str(
             request.item_type
@@ -1670,24 +2947,97 @@ def restore_bin_item(
                 normalized_id,
             )
 
+        _audit_success(
+            action="restore",
+            message=(
+                f"Knowledge {item_type} restored successfully."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": item_type,
+            },
+        )
+
         return {
             "status": "restored",
             "restored": restored,
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="restore",
+            message=(
+                f"Knowledge {item_type} restoration failed "
+                "because the item was not found."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": item_type,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="restore",
+            message=(
+                f"Knowledge {item_type} restoration failed validation."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": item_type,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="restore",
+            message=(
+                f"Knowledge {item_type} restoration failed."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": item_type,
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(
@@ -1707,6 +3057,9 @@ def permanent_delete_bin_item(
     item_type: str,
     item_id: str,
 ) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    request_id = create_request_id()
+
     normalized_type = (
         str(
             item_type
@@ -1743,24 +3096,102 @@ def permanent_delete_bin_item(
                 normalized_id,
             )
 
+        _audit_success(
+            action="permanent_delete",
+            message=(
+                f"Knowledge {normalized_type} permanently deleted."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": normalized_type,
+                "delete_mode": "permanent",
+            },
+        )
+
         return {
             "status": "deleted",
             **result,
         }
 
     except FileNotFoundError as exc:
+        _audit_failure(
+            action="permanent_delete",
+            message=(
+                f"Permanent Knowledge {normalized_type} deletion "
+                "failed because the item was not found."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": normalized_type,
+                "delete_mode": "permanent",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
     except ValueError as exc:
+        _audit_failure(
+            action="permanent_delete",
+            message=(
+                f"Permanent Knowledge {normalized_type} deletion "
+                "failed validation."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": normalized_type,
+                "delete_mode": "permanent",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
+        _audit_failure(
+            action="permanent_delete",
+            message=(
+                f"Permanent Knowledge {normalized_type} deletion failed."
+            ),
+            request_id=request_id,
+            resource_id=normalized_id,
+            duration_ms=_duration_ms(
+                started_at
+            ),
+            metadata={
+                "item_type": normalized_type,
+                "delete_mode": "permanent",
+                "error_type": type(
+                    exc
+                ).__name__,
+                "error": str(exc),
+            },
+        )
+
         raise HTTPException(
             status_code=500,
             detail=(

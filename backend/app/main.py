@@ -9,6 +9,10 @@ from app.api.knowledge_search import (
     router as knowledge_search_router,
 )
 from app.api.agents.routes import router as agents_router
+from app.api.sovereignty import router as sovereignty_router
+from app.api.audit import router as audit_router
+from app.api.analytics import router as analytics_router
+from app.api.auth import router as auth_router
 
 from app.core.database import init_db
 from app.core import models
@@ -19,7 +23,6 @@ from app.core import models
 # =========================================
 
 init_db()
-
 
 
 # =========================================
@@ -42,6 +45,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -75,6 +80,22 @@ app.include_router(
 
 app.include_router(
     agents_router
+)
+
+app.include_router(
+    sovereignty_router
+)
+
+app.include_router(
+    audit_router
+)
+
+app.include_router(
+    analytics_router
+)
+
+app.include_router(
+    auth_router
 )
 
 

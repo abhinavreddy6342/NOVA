@@ -1,0 +1,18 @@
+{
+  "active_model": "qwen2.5-coder:3b",
+  "task_routing": {
+    "general": "llama3.2:latest",
+    "coding": "qwen2.5-coder:3b",
+    "document": "llama3.2:latest",
+    "reasoning": "qwen2.5-coder:3b",
+    "knowledge": "llama3.2:latest",
+    "mission": "qwen2.5-coder:3b"
+  },
+  "activity": {
+    "latest_model_used": "llama3.2:latest",
+    "last_task": "general",
+    "last_status": "SUCCESS",
+    "last_used": "2026-09-17T17:19:30.188043+00:00",
+    "latency_ms": 13871.55
+  }
+}

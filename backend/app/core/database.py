@@ -1,14 +1,26 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
+BASE_DIR = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+    .parent
+)
 
 DATABASE_PATH = BASE_DIR / "nova.db"
 
-DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
+DATABASE_URL = (
+    f"sqlite:///{DATABASE_PATH.as_posix()}"
+)
 
 
 engine = create_engine(
@@ -29,31 +41,136 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
 def init_db():
     """
-    Initialize database tables and perform safe, idempotent migrations.
-    Guarantees existing data is never reset or deleted.
+    Initialize NOVA database tables and perform safe,
+    idempotent migrations.
+
+    Existing data is never intentionally deleted or reset.
     """
-    from sqlalchemy import text
 
-    Base.metadata.create_all(bind=engine)
+    # Register all NOVA SQLAlchemy models before create_all().
+    from app.core import models  # noqa: F401
 
-    with engine.connect() as conn:
+    # Create tables that do not already exist.
+    Base.metadata.create_all(
+        bind=engine
+    )
+
+    with engine.begin() as conn:
+
+        # ----------------------------------------------------
+        # CHAT_MESSAGES MIGRATION
+        # ----------------------------------------------------
+
         try:
             result = conn.execute(
-                text("PRAGMA table_info(chat_messages)")
+                text(
+                    "PRAGMA table_info(chat_messages)"
+                )
             ).fetchall()
-            columns = [row[1] for row in result]
-            if columns and "agent_data" not in columns:
+
+            columns = [
+                row[1]
+                for row in result
+            ]
+
+            if (
+                columns
+                and "agent_data" not in columns
+            ):
                 conn.execute(
                     text(
-                        "ALTER TABLE chat_messages ADD COLUMN agent_data TEXT;"
+                        """
+                        ALTER TABLE chat_messages
+                        ADD COLUMN agent_data TEXT
+                        """
                     )
                 )
-                conn.commit()
-        except Exception as exc:
-            print(f"Idempotent migration notice: {exc}")
 
+                print(
+                    "NOVA migration: "
+                    "chat_messages.agent_data added."
+                )
+
+        except Exception as exc:
+            print(
+                "NOVA migration notice "
+                "(chat_messages): "
+                f"{exc}"
+            )
+
+        # ----------------------------------------------------
+        # CONVERSATIONS USER OWNERSHIP MIGRATION
+        # ----------------------------------------------------
+
+        try:
+            result = conn.execute(
+                text(
+                    "PRAGMA table_info(conversations)"
+                )
+            ).fetchall()
+
+            columns = [
+                row[1]
+                for row in result
+            ]
+
+            if (
+                columns
+                and "user_id" not in columns
+            ):
+                conn.execute(
+                    text(
+                        """
+                        ALTER TABLE conversations
+                        ADD COLUMN user_id INTEGER
+                        """
+                    )
+                )
+
+                print(
+                    "NOVA migration: "
+                    "conversations.user_id added."
+                )
+
+        except Exception as exc:
+            print(
+                "NOVA migration notice "
+                "(conversations.user_id): "
+                f"{exc}"
+            )
+
+        # ----------------------------------------------------
+        # CONVERSATIONS USER INDEX
+        # ----------------------------------------------------
+
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    ix_conversations_user_id
+                    ON conversations(user_id)
+                    """
+                )
+            )
+
+        except Exception as exc:
+            print(
+                "NOVA migration notice "
+                "(conversation user index): "
+                f"{exc}"
+            )
+
+
+# ============================================================
+# DATABASE SESSION
+# ============================================================
 
 def get_db():
     db = SessionLocal()
@@ -61,4 +178,4 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        db.close()

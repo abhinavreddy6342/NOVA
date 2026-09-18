@@ -1,0 +1,1 @@
+event_id,timestamp,category,action,service,status,duration_ms,model,task_type,resource,resource_id,message,request_id,metadata

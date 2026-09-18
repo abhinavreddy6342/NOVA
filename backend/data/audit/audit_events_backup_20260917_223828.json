@@ -1,0 +1,166 @@
+[
+  {
+    "event_id": "33329ba2e8994544a3e56d4561a83bd5",
+    "timestamp": "2026-09-17T16:08:09.666061Z",
+    "category": "test",
+    "action": "test_success",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Audit success event",
+    "metadata": {
+      "source": "pytest",
+      "verified": true
+    },
+    "duration_ms": 125.5,
+    "model": "qwen2.5-coder:3b",
+    "task_type": "test",
+    "resource": "test_resource",
+    "resource_id": "test-001"
+  },
+  {
+    "event_id": "6ee7eccfed7b46039746cf384eab4e6a",
+    "timestamp": "2026-09-17T16:08:09.701384Z",
+    "category": "test",
+    "action": "test_failure",
+    "service": "test_suite",
+    "status": "failed",
+    "message": "Audit failure event",
+    "metadata": {
+      "source": "pytest",
+      "error_type": "TestError"
+    }
+  },
+  {
+    "event_id": "d399b6944f6642fa9a2e6067cdc0c3cc",
+    "timestamp": "2026-09-17T16:08:09.731103Z",
+    "category": "model",
+    "action": "model_test",
+    "service": "model_engine",
+    "status": "success",
+    "message": "Model test completed",
+    "metadata": {},
+    "model": "qwen2.5-coder:3b",
+    "task_type": "test",
+    "resource": "model",
+    "resource_id": "qwen2.5-coder:3b"
+  },
+  {
+    "event_id": "5a96c0860caa4483b7c2ff8a839679b5",
+    "timestamp": "2026-09-17T16:08:09.770373Z",
+    "category": "test",
+    "action": "event_0",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Event number 0",
+    "metadata": {}
+  },
+  {
+    "event_id": "defff7aeda9442cf81f10610edc7e36c",
+    "timestamp": "2026-09-17T16:08:09.777178Z",
+    "category": "test",
+    "action": "event_1",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Event number 1",
+    "metadata": {}
+  },
+  {
+    "event_id": "082c1b3b2fa44f2ba7e85261e3d51720",
+    "timestamp": "2026-09-17T16:08:09.782887Z",
+    "category": "test",
+    "action": "event_2",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Event number 2",
+    "metadata": {}
+  },
+  {
+    "event_id": "5b27272a1a2d48a9b139945c22c9c46f",
+    "timestamp": "2026-09-17T16:08:09.789059Z",
+    "category": "test",
+    "action": "event_3",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Event number 3",
+    "metadata": {}
+  },
+  {
+    "event_id": "9d4fcff1661545c7a51e808f48875f1a",
+    "timestamp": "2026-09-17T16:08:09.796058Z",
+    "category": "test",
+    "action": "event_4",
+    "service": "test_suite",
+    "status": "success",
+    "message": "Event number 4",
+    "metadata": {}
+  },
+  {
+    "event_id": "61e228601f2b42c4abb19a5dcf0d432e",
+    "timestamp": "2026-09-17T16:08:09.820904Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "success 1",
+    "metadata": {}
+  },
+  {
+    "event_id": "2364050ed39f482ba0e04668c8282c72",
+    "timestamp": "2026-09-17T16:08:09.828158Z",
+    "category": "model",
+    "action": "model_test",
+    "service": "model_engine",
+    "status": "success",
+    "message": "success 2",
+    "metadata": {}
+  },
+  {
+    "event_id": "20c837583d33479086219ce416a0d5c8",
+    "timestamp": "2026-09-17T16:08:09.835281Z",
+    "category": "knowledge",
+    "action": "file_upload",
+    "service": "knowledge",
+    "status": "failed",
+    "message": "failure 1",
+    "metadata": {}
+  },
+  {
+    "event_id": "824ace53f12b4ba9ade4775898726e2d",
+    "timestamp": "2026-09-17T16:08:09.856391Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "JSON export test",
+    "metadata": {
+      "export": true
+    }
+  },
+  {
+    "event_id": "5e251800d183499b8c69fb710c2b6560",
+    "timestamp": "2026-09-17T16:08:09.878891Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "CSV export test",
+    "metadata": {},
+    "duration_ms": 42.0,
+    "model": "qwen2.5-coder:3b",
+    "task_type": "auto"
+  },
+  {
+    "event_id": "c4c205b7d14646e6a544e134907507ec",
+    "timestamp": "2026-09-17T16:08:09.946424Z",
+    "category": "sovereignty",
+    "action": "network_event",
+    "service": "network_ledger",
+    "status": "success",
+    "message": "Application-level network event",
+    "metadata": {
+      "measurement_scope": "application_level"
+    },
+    "resource": "network",
+    "resource_id": "network-test-001"
+  }
+]

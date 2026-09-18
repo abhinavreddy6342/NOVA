@@ -1,4 +1,5 @@
 from enum import Enum
+import re
 from typing import List
 
 
@@ -17,10 +18,11 @@ class TaskType(str, Enum):
     SPREADSHEET = "spreadsheet"
     VISION = "vision"
     CREATIVE = "creative"
+    MISSION = "mission"
 
 
 # ---------------------------------------------------------------------------
-# KEYWORD GROUPS
+# KEYWORDS
 # ---------------------------------------------------------------------------
 
 KEYWORDS = {
@@ -144,6 +146,18 @@ KEYWORDS = {
         "design concept",
     ],
 
+    TaskType.MISSION: [
+        "mission",
+        "mission control",
+        "mission execution",
+        "execute this mission",
+        "run this mission",
+        "start mission",
+        "autonomous mission",
+        "autonomous multi-step",
+        "multi-step mission",
+    ],
+
     TaskType.CONVERSATION: [
         "hello",
         "hi",
@@ -161,41 +175,68 @@ KEYWORDS = {
 
 
 # ---------------------------------------------------------------------------
-# CLASSIFICATION
+# MATCHING
 # ---------------------------------------------------------------------------
+
+def _keyword_matches(
+    text: str,
+    keyword: str,
+) -> bool:
+    """
+    Match complete words/phrases rather than arbitrary substrings.
+    """
+
+    escaped = re.escape(
+        keyword.strip().lower()
+    )
+
+    if not escaped:
+        return False
+
+    pattern = (
+        rf"(?<!\w){escaped}(?!\w)"
+    )
+
+    return re.search(
+        pattern,
+        text,
+        flags=re.IGNORECASE,
+    ) is not None
+
 
 def _score_task(
     text: str,
     keywords: List[str],
 ) -> int:
-    """
-    Calculate a simple keyword score.
-    """
-
     score = 0
 
     for keyword in keywords:
-        if keyword in text:
+        if _keyword_matches(
+            text,
+            keyword,
+        ):
             score += 1
 
     return score
 
 
+# ---------------------------------------------------------------------------
+# CLASSIFICATION
+# ---------------------------------------------------------------------------
+
 def classify_task(
     text: str,
 ) -> TaskType:
-    """
-    Classify a user request into the most likely NOVA task type.
-
-    This is intentionally deterministic and local.
-    No external model or API is used.
-    """
 
     if not text or not text.strip():
         return TaskType.GENERAL
 
-    normalized = " ".join(
-        text.lower().strip().split()
+    normalized = (
+        " ".join(
+            text.lower()
+            .strip()
+            .split()
+        )
     )
 
     scores = {
@@ -203,17 +244,26 @@ def classify_task(
             normalized,
             keywords,
         )
-        for task_type, keywords in KEYWORDS.items()
+        for (
+            task_type,
+            keywords,
+        ) in KEYWORDS.items()
     }
+
+    # Mission requests are application-level commands.
+    # Give them priority when an explicit mission signal exists.
+    if scores.get(
+        TaskType.MISSION,
+        0,
+    ) > 0:
+        return TaskType.MISSION
 
     best_task = max(
         scores,
-        key=scores.get,
+        key=lambda task: scores[task],
     )
 
-    best_score = scores[best_task]
-
-    if best_score == 0:
+    if scores[best_task] == 0:
         return TaskType.GENERAL
 
     return best_task
@@ -223,32 +273,40 @@ def classify_tasks(
     text: str,
     minimum_score: int = 1,
 ) -> List[TaskType]:
-    """
-    Return all matching task categories.
-
-    Useful when a request contains multiple task types,
-    such as document analysis + reasoning.
-    """
 
     if not text or not text.strip():
-        return [TaskType.GENERAL]
+        return [
+            TaskType.GENERAL
+        ]
 
-    normalized = " ".join(
-        text.lower().strip().split()
+    normalized = (
+        " ".join(
+            text.lower()
+            .strip()
+            .split()
+        )
     )
 
     matches = []
 
-    for task_type, keywords in KEYWORDS.items():
+    for (
+        task_type,
+        keywords,
+    ) in KEYWORDS.items():
+
         score = _score_task(
             normalized,
             keywords,
         )
 
         if score >= minimum_score:
-            matches.append(task_type)
+            matches.append(
+                task_type
+            )
 
     if not matches:
-        return [TaskType.GENERAL]
+        return [
+            TaskType.GENERAL
+        ]
 
     return matches
