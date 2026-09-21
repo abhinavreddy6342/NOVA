@@ -590,12 +590,12 @@ function buildAuditQuery(
       filters.taskType ??
       filters.task_type,
 
-    start:
+    start_time:
       filters.start ??
       filters.startDate ??
       filters.start_date,
 
-    end:
+    end_time:
       filters.end ??
       filters.endDate ??
       filters.end_date,

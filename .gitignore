@@ -1,0 +1,77 @@
+﻿# Environment / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Node / Vite
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Databases / local state
+*.db
+*.sqlite
+*.sqlite3
+nova.db
+
+# Chroma / vector stores
+chroma/
+chromadb/
+**/chroma/
+**/chromadb/
+
+# NOVA local workspace data
+backend/app/workspace/input/*
+backend/app/workspace/output/*
+
+# Runtime / generated data
+backend/data/
+**/generated/
+**/outputs/
+*.log
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Archives / checkpoints
+*.zip
+*.7z
+*.rar
+NOVA_CHECKPOINT*/

@@ -12694,6 +12694,52 @@ h3,
     infinite;
 }
 
+.nova-audit-query-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 16px;
+  border: 1px solid rgba(180, 215, 235, 0.07);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.nova-audit-query-state span {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-right: 1px solid rgba(180, 215, 235, 0.06);
+  color: #7893a1;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.nova-audit-query-state span:last-child {
+  border-right: 0;
+}
+
+.nova-audit-trace-button {
+  width: calc(100% - 28px);
+  min-height: 36px;
+  margin: 13px 14px 0;
+  border: 1px solid rgba(109, 220, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(109, 220, 255, 0.035);
+  color: #9bd4e5;
+  font: 700 7px var(--font-mono);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.nova-audit-trace-button:hover {
+  border-color: rgba(109, 220, 255, 0.35);
+  background: rgba(109, 220, 255, 0.07);
+  color: #e4fbff;
+}
+
 @keyframes nova-audit-spin {
   to {
     transform: rotate(360deg);
@@ -12867,6 +12913,20 @@ h3,
   .audit-detail-grid {
     grid-template-columns:
       repeat(2, minmax(0, 1fr));
+  }
+
+  .nova-audit-query-state {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .nova-audit-query-state span {
+    border-right: 0;
+    border-bottom: 1px solid rgba(180, 215, 235, 0.06);
+  }
+
+  .nova-audit-query-state span:last-child {
+    border-bottom: 0;
   }
 }
 
@@ -15330,6 +15390,371 @@ h3,
     animation: none;
     opacity: 0.18 !important;
   }
+}
+
+/* =========================================================
+   AUDIT TRAIL — READABILITY AND LAYOUT CORRECTIONS
+   These selectors match the current AuditTrail component.  They are kept
+   last so the legacy audit stylesheet cannot shrink or rearrange the view.
+   ========================================================= */
+
+.nova-audit-page {
+  max-width: 1540px;
+  padding: 32px 34px 60px;
+}
+
+.nova-audit-heading {
+  min-width: 0;
+  flex: 1 1 600px;
+}
+
+.nova-audit-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.nova-audit-header h1 {
+  font-size: clamp(34px, 4vw, 52px);
+}
+
+.nova-audit-header p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.nova-audit-header-actions button,
+.nova-audit-clear-button,
+.nova-audit-trace-button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(148, 205, 224, 0.2);
+  border-radius: 7px;
+  background: rgba(11, 19, 26, 0.92);
+  color: #d7e8ee;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nova-audit-icon-button {
+  display: inline-grid;
+  width: 38px;
+  place-items: center;
+}
+
+.nova-audit-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.nova-audit-stat {
+  min-height: 124px;
+  padding: 17px;
+}
+
+.nova-audit-stat-label,
+.nova-audit-stat-detail {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.nova-audit-stat-value {
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.nova-audit-query-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 12px 0;
+}
+
+.nova-audit-query-state span {
+  padding: 10px 14px;
+  color: #9cb3be;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.nova-audit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+
+.nova-audit-search {
+  min-height: 42px;
+  flex: 1 1 360px;
+}
+
+.nova-audit-search input,
+.nova-audit-filter-field input,
+.nova-audit-filter-field select {
+  min-height: 42px;
+  color: #e3f0f4;
+  background: #0a1218;
+  border-color: rgba(148, 205, 224, 0.2);
+  font-size: 14px;
+}
+
+.nova-audit-filter-field select {
+  color-scheme: dark;
+}
+
+.nova-audit-toolbar-label,
+.nova-audit-filter-field > span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nova-audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.nova-audit-filter-field {
+  min-width: 0;
+  gap: 7px;
+}
+
+.nova-audit-filter-field input,
+.nova-audit-filter-field select {
+  width: 100%;
+}
+
+.nova-audit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.56fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.nova-audit-stream-panel,
+.nova-audit-inspector {
+  border: 1px solid rgba(148, 205, 224, 0.14);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(11, 19, 26, 0.96), rgba(5, 10, 15, 0.98));
+}
+
+.nova-audit-stream-header {
+  padding: 18px 20px;
+}
+
+.nova-audit-stream-title {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+}
+
+.nova-audit-stream-header p,
+.nova-audit-stream-health {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nova-audit-event-row {
+  grid-template-columns: 38px minmax(178px, 0.34fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  min-height: 100px;
+  padding: 16px 18px;
+  align-items: start;
+}
+
+.nova-audit-event-node {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+}
+
+.nova-audit-event-time {
+  padding-top: 2px;
+  text-align: left;
+}
+
+.nova-audit-event-time strong {
+  font-size: 12px;
+}
+
+.nova-audit-event-time span {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.nova-audit-event-title {
+  gap: 10px;
+}
+
+.nova-audit-event-title strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.nova-audit-event-main > p {
+  margin: 7px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.nova-audit-event-meta {
+  gap: 7px;
+}
+
+.nova-audit-event-meta span,
+.nova-audit-status {
+  font-size: 11px;
+}
+
+.nova-audit-event-side {
+  min-width: 68px;
+  font-size: 12px;
+}
+
+.nova-audit-inspector {
+  max-height: 760px;
+}
+
+.nova-audit-inspector-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(148, 205, 224, 0.12);
+}
+
+.nova-audit-inspector-header span,
+.nova-audit-inspector-section-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.nova-audit-inspector-header h3 {
+  margin: 6px 0 0;
+  font-size: 18px;
+}
+
+.nova-audit-inspector-section {
+  padding: 17px 20px;
+}
+
+.nova-audit-detail-grid {
+  margin: 12px 0 0;
+  gap: 9px;
+}
+
+.nova-audit-detail-value {
+  padding: 11px;
+}
+
+.nova-audit-detail-value > span {
+  font-size: 10px;
+}
+
+.nova-audit-detail-value > strong,
+.nova-audit-message-box,
+.nova-audit-metadata {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.nova-audit-message-box,
+.nova-audit-metadata {
+  margin: 12px 0 0;
+}
+
+.nova-audit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 16px;
+  padding: 14px 18px;
+  border: 1px solid rgba(148, 205, 224, 0.13);
+  border-radius: 8px;
+  background: rgba(8, 15, 21, 0.72);
+  color: #91a9b5;
+}
+
+.nova-audit-footer > div {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.nova-audit-footer > div:nth-child(2) {
+  margin-left: auto;
+  color: #b3c6ce;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.nova-audit-footer > div:last-child {
+  color: #7ec7dc;
+}
+
+@media (max-width: 1200px) {
+  .nova-audit-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .nova-audit-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .nova-audit-layout { grid-template-columns: minmax(0, 1fr); }
+  .nova-audit-inspector { max-height: none; }
+}
+
+@media (max-width: 700px) {
+  .nova-audit-page { padding: 24px 18px 44px; }
+  .nova-audit-header { align-items: flex-start; flex-direction: column; }
+  .nova-audit-header-actions { justify-content: flex-start; }
+  .nova-audit-header h1 { font-size: 36px; }
+  .nova-audit-header p { font-size: 13px; }
+  .nova-audit-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nova-audit-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nova-audit-event-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .nova-audit-event-time,
+  .nova-audit-event-main,
+  .nova-audit-event-side { grid-column: 2; }
+  .nova-audit-event-side {
+    align-items: center;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+  .nova-audit-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .nova-audit-footer > div:nth-child(2) { margin-left: 0; }
+}
+
+@media (max-width: 480px) {
+  .nova-audit-page { padding: 20px 14px 38px; }
+  .nova-audit-eyebrow,
+  .nova-audit-toolbar-label,
+  .nova-audit-filter-field > span { font-size: 10px; }
+  .nova-audit-header h1 { font-size: 32px; }
+  .nova-audit-stats-grid,
+  .nova-audit-filter-grid { grid-template-columns: 1fr; }
+  .nova-audit-stat { min-height: 108px; }
+  .nova-audit-query-state { display: grid; grid-template-columns: 1fr; }
+  .nova-audit-query-state span { border-right: 0; }
+  .nova-audit-toolbar { align-items: stretch; flex-wrap: wrap; }
+  .nova-audit-search { flex-basis: 100%; }
+  .nova-audit-detail-grid { grid-template-columns: 1fr; }
 }
 /* =========================================================
    NOVA AUTH — FINAL LOGIN / REGISTER OVERRIDES

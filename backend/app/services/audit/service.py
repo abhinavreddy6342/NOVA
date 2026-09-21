@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, Optional
 
@@ -44,6 +45,26 @@ AUDIT_STATUS_ERROR = "error"
 DEFAULT_CATEGORY = "system"
 DEFAULT_ACTION = "operation"
 DEFAULT_SERVICE = "unknown"
+
+
+_audit_user_id: ContextVar[Optional[str]] = ContextVar(
+    "audit_user_id",
+    default=None,
+)
+
+
+def set_audit_user_id(user_id: Optional[Any]):
+    """Bind the authenticated request owner to its audit records."""
+
+    return _audit_user_id.set(
+        str(user_id) if user_id is not None else None
+    )
+
+
+def reset_audit_user_id(token: Any) -> None:
+    """Clear request-scoped audit ownership."""
+
+    _audit_user_id.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +230,11 @@ class AuditService:
                 or {}
             ),
         }
+
+        current_user_id = _audit_user_id.get()
+
+        if current_user_id is not None:
+            event["user_id"] = current_user_id
 
         if duration_ms is not None:
             try:
@@ -637,4 +663,6 @@ __all__ = [
     "audit_service",
     "create_event_id",
     "create_request_id",
+    "reset_audit_user_id",
+    "set_audit_user_id",
 ]

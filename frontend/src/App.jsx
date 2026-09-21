@@ -23,6 +23,7 @@ import RegisterPage from "./components/auth/RegisterPage";
 import Sidebar from "./components/layout/Sidebar";
 import Topbar from "./components/layout/Topbar";
 import CommandCenter from "./components/dashboard/CommandCenter";
+import Missions from "./components/dashboard/Missions";
 import ChatWindow from "./components/chat/ChatWindow";
 import KnowledgeVault from "./components/knowledge/KnowledgeVault";
 import VoiceController from "./components/voice/VoiceController";
@@ -991,6 +992,33 @@ function NovaWorkspace() {
               }}
             >
               <AuditTrail />
+            </motion.div>
+
+
+
+          ) : activePage ===
+            "missions" ? (
+
+            <motion.div
+              key="missions"
+              initial={{
+                opacity: 0,
+                y: 14,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: -10,
+              }}
+              transition={{
+                duration: 0.35,
+                ease: "easeOut",
+              }}
+            >
+              <Missions />
             </motion.div>
 
 

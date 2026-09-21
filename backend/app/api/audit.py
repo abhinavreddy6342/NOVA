@@ -17,9 +17,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
+from app.api.auth import get_current_user
+from app.core import models
 from app.services.audit.service import audit_service
 
 
@@ -83,6 +85,7 @@ async def get_audit_events(
         ge=0,
         description="Number of matching events to skip.",
     ),
+    user: models.User = Depends(get_current_user),
 ):
     """
     Return real persisted audit events.
@@ -102,6 +105,7 @@ async def get_audit_events(
         end_time=end_time,
         limit=limit,
         offset=offset,
+        user_id=str(user.id),
     )
 
 
@@ -111,13 +115,17 @@ async def get_audit_events(
 
 
 @router.get("/summary")
-async def get_audit_summary():
+async def get_audit_summary(
+    user: models.User = Depends(get_current_user),
+):
     """
     Return aggregate information over the actual persisted audit trail.
     """
 
     return {
-        "summary": audit_service.summary(),
+        "summary": audit_service.summary(
+            user_id=str(user.id),
+        ),
     }
 
 
@@ -129,13 +137,15 @@ async def get_audit_summary():
 @router.get("/{event_id}")
 async def get_audit_event(
     event_id: str,
+    user: models.User = Depends(get_current_user),
 ):
     """
     Return one persisted audit event by event ID.
     """
 
     event = audit_service.get_event(
-        event_id
+        event_id,
+        user_id=str(user.id),
     )
 
     if event is None:
@@ -165,6 +175,7 @@ async def export_audit_json(
     task_type: Optional[str] = Query(default=None),
     start_time: Optional[str] = Query(default=None),
     end_time: Optional[str] = Query(default=None),
+    user: models.User = Depends(get_current_user),
 ):
     """
     Export the filtered audit events as JSON.
@@ -180,6 +191,7 @@ async def export_audit_json(
         task_type=task_type,
         start_time=start_time,
         end_time=end_time,
+        user_id=str(user.id),
     )
 
     return Response(
@@ -209,6 +221,7 @@ async def export_audit_csv(
     task_type: Optional[str] = Query(default=None),
     start_time: Optional[str] = Query(default=None),
     end_time: Optional[str] = Query(default=None),
+    user: models.User = Depends(get_current_user),
 ):
     """
     Export the filtered audit events as CSV.
@@ -224,6 +237,7 @@ async def export_audit_csv(
         task_type=task_type,
         start_time=start_time,
         end_time=end_time,
+        user_id=str(user.id),
     )
 
     return Response(

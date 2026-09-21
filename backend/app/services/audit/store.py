@@ -343,6 +343,7 @@ class AuditStore:
         status: Optional[str] = None,
         model: Optional[str] = None,
         task_type: Optional[str] = None,
+        user_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         limit: int = 100,
@@ -426,7 +427,29 @@ class AuditStore:
             else None
         )
 
+        clean_user_id = (
+            str(user_id).strip()
+            if user_id is not None
+            else None
+        )
+
         for event in events:
+            metadata = event.get("metadata", {})
+
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            event_user_id = (
+                event.get("user_id")
+                or metadata.get("user_id")
+            )
+
+            if (
+                clean_user_id is not None
+                and str(event_user_id) != clean_user_id
+            ):
+                continue
+
             event_category = str(
                 event.get(
                     "category",
@@ -533,69 +556,10 @@ class AuditStore:
                 continue
 
             if clean_query:
-                searchable = " ".join(
-                    [
-                        str(
-                            event.get(
-                                "event_id",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "category",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "action",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "service",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "status",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "model",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "task_type",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "resource",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "resource_id",
-                                "",
-                            )
-                        ),
-                        str(
-                            event.get(
-                                "message",
-                                "",
-                            )
-                        ),
-                    ]
+                searchable = json.dumps(
+                    event,
+                    ensure_ascii=False,
+                    default=str,
                 ).lower()
 
                 if clean_query not in searchable:
@@ -626,6 +590,8 @@ class AuditStore:
     def get_event(
         self,
         event_id: str,
+        *,
+        user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Find one audit event by event ID.
@@ -641,12 +607,23 @@ class AuditStore:
         events = self._read_events()
 
         for event in events:
-            if str(
-                event.get(
-                    "event_id",
-                    "",
-                )
-            ) == target:
+            if str(event.get("event_id", "")) != target:
+                continue
+
+            metadata = event.get("metadata", {})
+
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            event_user_id = (
+                event.get("user_id")
+                or metadata.get("user_id")
+            )
+
+            if (
+                user_id is None
+                or str(event_user_id) == str(user_id)
+            ):
                 return event
 
         return None
@@ -655,12 +632,19 @@ class AuditStore:
     # SUMMARY
     # ---------------------------------------------------------------------
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(
+        self,
+        *,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Return aggregate counts over the actual persisted audit events.
         """
 
-        events = self._read_events()
+        events = self.list_events(
+            user_id=user_id,
+            limit=1000,
+        )["events"]
 
         total = len(events)
 
@@ -803,6 +787,7 @@ class AuditStore:
         status: Optional[str] = None,
         model: Optional[str] = None,
         task_type: Optional[str] = None,
+        user_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
     ) -> str:
@@ -818,6 +803,7 @@ class AuditStore:
             status=status,
             model=model,
             task_type=task_type,
+            user_id=user_id,
             start_time=start_time,
             end_time=end_time,
             limit=1000,
@@ -840,6 +826,7 @@ class AuditStore:
         status: Optional[str] = None,
         model: Optional[str] = None,
         task_type: Optional[str] = None,
+        user_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
     ) -> str:
@@ -855,6 +842,7 @@ class AuditStore:
             status=status,
             model=model,
             task_type=task_type,
+            user_id=user_id,
             start_time=start_time,
             end_time=end_time,
             limit=1000,

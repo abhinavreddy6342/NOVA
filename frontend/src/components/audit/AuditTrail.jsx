@@ -138,6 +138,15 @@ function normalizeListResponse(
 function normalizeEvent(
   event
 ) {
+  if (
+    event?.event &&
+    typeof event.event === "object"
+  ) {
+    return normalizeEvent(
+      event.event
+    );
+  }
+
   if (!event || typeof event !== "object") {
     return {};
   }
@@ -217,6 +226,20 @@ function normalizeEvent(
       metadata.requestId ||
       null,
 
+    correlation_id:
+      event.correlation_id ||
+      event.correlationId ||
+      metadata.correlation_id ||
+      metadata.correlationId ||
+      null,
+
+    user_id:
+      event.user_id ||
+      event.userId ||
+      metadata.user_id ||
+      metadata.userId ||
+      null,
+
     message:
       event.message ||
       event.description ||
@@ -233,10 +256,13 @@ function normalizeSummary(
   events
 ) {
   const raw =
-    summary &&
-    typeof summary === "object"
-      ? summary
-      : {};
+    summary?.summary &&
+    typeof summary.summary === "object"
+      ? summary.summary
+      : summary &&
+        typeof summary === "object"
+          ? summary
+          : {};
 
   const eventList =
     Array.isArray(events)
@@ -1110,6 +1136,7 @@ function AuditEventRow({
 function EventInspector({
   event,
   onClose,
+  onTrace,
 }) {
   const normalized =
     normalizeEvent(
@@ -1208,6 +1235,26 @@ function EventInspector({
             mono
           />
 
+          {normalized.correlation_id && (
+            <DetailValue
+              label="Correlation ID"
+              value={
+                normalized.correlation_id
+              }
+              mono
+            />
+          )}
+
+          {normalized.user_id && (
+            <DetailValue
+              label="User ID"
+              value={
+                normalized.user_id
+              }
+              mono
+            />
+          )}
+
           <DetailValue
             label="Category"
             value={
@@ -1241,6 +1288,22 @@ function EventInspector({
           />
         </div>
       </section>
+
+      {(normalized.request_id ||
+        normalized.correlation_id) && (
+        <button
+          type="button"
+          className="nova-audit-trace-button"
+          onClick={() =>
+            onTrace(
+              normalized.correlation_id ||
+                normalized.request_id
+            )
+          }
+        >
+          View related trace
+        </button>
+      )}
 
       <section className="nova-audit-inspector-section">
         <div className="nova-audit-inspector-section-title">
@@ -1419,6 +1482,29 @@ export default function AuditTrail() {
     inspectorLoading,
     setInspectorLoading,
   ] = useState(false);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      return undefined;
+    }
+
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setSelectedEvent(null);
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      closeOnEscape
+    );
+
+    return () =>
+      window.removeEventListener(
+        "keydown",
+        closeOnEscape
+      );
+  }, [selectedEvent]);
 
 
   // =======================================================
@@ -1921,6 +2007,29 @@ export default function AuditTrail() {
         )
       : 0;
 
+  const averageLatency =
+    useMemo(() => {
+      const durations = events
+        .map((event) =>
+          Number(event.duration_ms)
+        )
+        .filter(Number.isFinite);
+
+      if (!durations.length) {
+        return null;
+      }
+
+      return durations.reduce(
+        (total, value) => total + value,
+        0
+      ) / durations.length;
+    }, [events]);
+
+  const latestTimestamp =
+    events[0]?.timestamp ||
+    displaySummary.latest_event?.timestamp ||
+    null;
+
 
   // =======================================================
   // RENDER
@@ -2143,6 +2252,20 @@ export default function AuditTrail() {
           }
           detail={`${displaySummary.external} external · ${displaySummary.network} network`}
         />
+      </div>
+
+      <div className="nova-audit-query-state">
+        <span>
+          RANGE COUNT: {totalEvents.toLocaleString()}
+        </span>
+
+        <span>
+          AVG LATENCY: {averageLatency === null ? "NOT AVAILABLE" : formatDuration(averageLatency)}
+        </span>
+
+        <span>
+          LAST EVENT: {latestTimestamp ? formatTimestamp(latestTimestamp) : "NOT AVAILABLE"}
+        </span>
       </div>
 
       <div className="nova-audit-toolbar">
@@ -2471,6 +2594,13 @@ export default function AuditTrail() {
                   null
                 )
               }
+              onTrace={(traceId) => {
+                updateFilter(
+                  "query",
+                  traceId
+                );
+                setSelectedEvent(null);
+              }}
             />
           )}
         </AnimatePresence>

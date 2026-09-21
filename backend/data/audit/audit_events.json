@@ -139,5 +139,154 @@
     "resource": "workspace_file",
     "resource_id": "nonexistent-or-user-a-file",
     "request_id": "f7a0cf1f0a824883ac5a6f58d24ad335"
+  },
+  {
+    "event_id": "fc61f6f2a36748a2a6bdd503293d57be",
+    "timestamp": "2026-09-18T01:32:40.769336Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "Local chat request completed successfully.",
+    "metadata": {
+      "conversation_id": "45bf67e7-c41c-429b-8368-a93e3a900f35",
+      "requested_model": "llama3.2:latest",
+      "resolved_model": "llama3.2:latest",
+      "attachment_count": 0,
+      "attachment_file_ids": [],
+      "vault_id": null,
+      "selected_file_ids": [],
+      "message_length": 2
+    },
+    "duration_ms": 26308.52,
+    "model": "llama3.2:latest",
+    "task_type": "auto",
+    "resource": "conversation",
+    "resource_id": "45bf67e7-c41c-429b-8368-a93e3a900f35",
+    "request_id": "a8c9606c9fe5467688297d1453037fca"
+  },
+  {
+    "event_id": "1d038c3fa4f342538d9e9e854cd63930",
+    "timestamp": "2026-09-18T08:45:52.850903Z",
+    "category": "chat",
+    "action": "request",
+    "service": "chat",
+    "status": "success",
+    "message": "Local chat request completed successfully.",
+    "metadata": {
+      "conversation_id": "0ff8507f-4ee5-4501-aa08-d9093b6b1dfe",
+      "requested_model": "llama3.2:latest",
+      "resolved_model": "llama3.2:latest",
+      "attachment_count": 0,
+      "attachment_file_ids": [],
+      "vault_id": null,
+      "selected_file_ids": [],
+      "message_length": 27
+    },
+    "duration_ms": 27092.92,
+    "model": "llama3.2:latest",
+    "task_type": "auto",
+    "resource": "conversation",
+    "resource_id": "0ff8507f-4ee5-4501-aa08-d9093b6b1dfe",
+    "request_id": "d94ba3cf008242c8950d5c581d608aff"
+  },
+  {
+    "event_id": "1459bfca78a940c8a4281d6ff11325b9",
+    "timestamp": "2026-09-18T09:00:23.662510Z",
+    "category": "agent",
+    "action": "agent_run_started",
+    "service": "agents",
+    "status": "success",
+    "message": "Agent workflow started.",
+    "metadata": {
+      "objective_length": 50,
+      "auto_confirm": false,
+      "attachment_count": 0,
+      "vault_file_count": 0
+    },
+    "task_type": "agent",
+    "resource": "agent",
+    "request_id": "e64b076adf9e40efa832b39dfd81ff7f"
+  },
+  {
+    "event_id": "3a7b1b2d22f6484c9839bbafdb0267de",
+    "timestamp": "2026-09-18T09:00:23.835420Z",
+    "category": "agent",
+    "action": "agent_plan_created",
+    "service": "agents.planner",
+    "status": "success",
+    "message": "Agent plan created.",
+    "metadata": {
+      "mission_id": null,
+      "objective_length": 50,
+      "evidence_review": false,
+      "evidence_count": 0
+    },
+    "duration_ms": 101.6,
+    "task_type": "agent",
+    "resource": "agent",
+    "request_id": "e64b076adf9e40efa832b39dfd81ff7f"
+  },
+  {
+    "event_id": "227d76bb96b5400aa45aa3712f355b2e",
+    "timestamp": "2026-09-18T09:00:39.593947Z",
+    "category": "agent",
+    "action": "agent_execution",
+    "service": "agents.executor",
+    "status": "success",
+    "message": "Agent execution completed.",
+    "metadata": {
+      "mission_id": null,
+      "execution_status": "completed",
+      "completed_steps": 1,
+      "failed_steps": 0,
+      "blocked_steps": 0,
+      "mission_cancelled": false
+    },
+    "duration_ms": 15682.85,
+    "task_type": "agent",
+    "resource": "agent",
+    "request_id": "e64b076adf9e40efa832b39dfd81ff7f"
+  },
+  {
+    "event_id": "548f9e400ce4455bb2d7a782fa71cd34",
+    "timestamp": "2026-09-18T09:01:23.304616Z",
+    "category": "agent",
+    "action": "agent_workflow_response_ready",
+    "service": "agents",
+    "status": "success",
+    "message": "Agent response synthesized.",
+    "metadata": {
+      "mission_id": null,
+      "artifact_count": 0,
+      "evidence_review": false,
+      "response_length": 1059
+    },
+    "duration_ms": 59587.32,
+    "task_type": "agent",
+    "resource": "agent",
+    "request_id": "e64b076adf9e40efa832b39dfd81ff7f"
+  },
+  {
+    "event_id": "959d472000d54ad3aef5777f860b22b2",
+    "timestamp": "2026-09-18T09:01:23.399607Z",
+    "category": "agent",
+    "action": "agent_run_completed",
+    "service": "agents",
+    "status": "success",
+    "message": "Agent workflow completed successfully.",
+    "metadata": {
+      "conversation_id": "0ff8507f-4ee5-4501-aa08-d9093b6b1dfe",
+      "artifact_count": 0,
+      "execution_status": "completed",
+      "completed_steps": 1,
+      "failed_steps": 0,
+      "blocked_steps": 0
+    },
+    "duration_ms": 59743.08,
+    "task_type": "agent",
+    "resource": "agent",
+    "resource_id": "0ff8507f-4ee5-4501-aa08-d9093b6b1dfe",
+    "request_id": "e64b076adf9e40efa832b39dfd81ff7f"
   }
 ]

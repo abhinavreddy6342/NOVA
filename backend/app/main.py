@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.model_engine.routes import router as model_engine_router
@@ -12,7 +12,15 @@ from app.api.agents.routes import router as agents_router
 from app.api.sovereignty import router as sovereignty_router
 from app.api.audit import router as audit_router
 from app.api.analytics import router as analytics_router
-from app.api.auth import router as auth_router
+from app.api.auth import (
+    COOKIE_NAME,
+    _decode_jwt,
+    router as auth_router,
+)
+from app.services.audit.service import (
+    reset_audit_user_id,
+    set_audit_user_id,
+)
 
 from app.core.database import init_db
 from app.core import models
@@ -34,6 +42,23 @@ app = FastAPI(
     description="Sovereign Industrial Intelligence Backend",
     version="0.1.0",
 )
+
+
+@app.middleware("http")
+async def bind_audit_user(
+    request: Request,
+    call_next,
+):
+    """Associate audit events with the verified session owner."""
+
+    session = request.cookies.get(COOKIE_NAME)
+    user_id = _decode_jwt(session) if session else None
+    context_token = set_audit_user_id(user_id)
+
+    try:
+        return await call_next(request)
+    finally:
+        reset_audit_user_id(context_token)
 
 
 # =========================================
